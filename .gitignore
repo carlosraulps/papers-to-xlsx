@@ -1,0 +1,7 @@
+venv/
+env/
+.env
+__pycache__/
+*.pyc
+processed_log.json
+papers_analysis_output/
