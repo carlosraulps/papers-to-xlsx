@@ -4,7 +4,7 @@ Automate the extraction of structured data from scientific PDFs using Google's G
 
 ## Features
 
--   **AI-Powered Analysis**: Uses Gemini 1.5 Flash to deeply understand and extract specific scientific details.
+-   **AI-Powered Analysis**: Uses Gemini 2.5 Flash to deeply understand and extract specific scientific details.
 -   **Smart Caching**: Maintains a `processed_log.json` to skip already analyzed papers, saving time and API credits.
 -   **Structured Excel Export**: Appends new analyses to a single `Paper_Analysis_Results.xlsx` file. Each paper gets its own alphabetically sorted tab.
 -   **Automatic Organization**: Renames processed PDFs to `Author_Year_Title.pdf` standard format.
