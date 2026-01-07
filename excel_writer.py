@@ -62,20 +62,35 @@ def add_paper_to_workbook(wb, paper_data):
     year = str(paper_data.get("Year", "Unknown"))
     
     # Clean up author/year to be safe
+    # Clean up author/year
     first_author = "".join(x for x in first_author if x.isalnum())
     year = "".join(x for x in year if x.isalnum())
-
-    base_name = f"{first_author}_{year}"
+    
+    # Include Short Title for better sorting/identification
+    title = paper_data.get("Title", "")
+    # Remove non-alphanumeric (keep spaces for readability then remove later? or just strict alnum)
+    # The clean_sheet_name handles invalid chars, but let's be cleaner for the base
+    short_title = "".join(x for x in title if x.isalnum())
+    
+    # Construct base: Author_Year_Title
+    # We need to be careful with length. 31 limit.
+    # heuristic: Author (max 10) + _ + Year (4) + _ + Title (remaining)
+    # This ensures Author_Year is preserved.
+    
+    author_part = first_author[:10]
+    year_part = year[:4]
+    
+    # Author_Year_ is roughly 10+1+4+1 = 16 chars. 
+    # Remaining for title = 31 - 16 = 15 chars.
+    
+    base_name = f"{author_part}_{year_part}_{short_title}"
+    
+    # get_unique_sheet_name will truncate the whole thing to 31 if needed
     sheet_name = get_unique_sheet_name(wb, base_name)
     
     ws = wb.create_sheet(title=sheet_name)
     
-    # Headers? The user requested Col A = Category, Col B = Answer.
-    # We won't add a header row unless implicit, but the user description 
-    # implies a key-value list structure directly in the cells.
-    # Let's add a simple header for clarity anyway, or just start data. 
-    # User said: "Sheet Layout: Column A: "Category/Question", Column B: "Extracted Answer""
-    # I will put this as the first row.
+    # Headers
     ws['A1'] = "Category/Question"
     ws['B1'] = "Extracted Answer"
     
@@ -90,7 +105,6 @@ def add_paper_to_workbook(wb, paper_data):
     row_idx = 2
     for key in keys_order:
         val = paper_data.get(key, "N/A")
-        # Ensure list values are joined into string
         if isinstance(val, list):
             val = ", ".join(str(v) for v in val)
         else:
@@ -101,15 +115,35 @@ def add_paper_to_workbook(wb, paper_data):
         row_idx += 1
         
     # Formatting
-    # A width 30, B width 100
     ws.column_dimensions['A'].width = 30
     ws.column_dimensions['B'].width = 100
     
-    # Text Wrap and Center Alignment for ALL cells used
-    # Iterate over all rows we wrote
     for row in ws.iter_rows(min_row=1, max_row=row_idx-1, min_col=1, max_col=2):
         for cell in row:
             cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
+def sort_sheets_alphabetically(wb):
+    """Sorts all sheets in the workbook alphabetically."""
+    # Get all sheet names
+    sheet_names = wb.sheetnames
+    # Sort them
+    sheet_names.sort()
+    # Reorder
+    for i, name in enumerate(sheet_names):
+        wb.move_sheet(wb[name], offset=i - wb.index(wb[name]))
+
+def cleanup_empty_sheets(wb):
+    """Removes 'Sheet' or 'Sheet1' if they are default/empty."""
+    for default_name in ["Sheet", "Sheet1"]:
+        if default_name in wb.sheetnames:
+            ws = wb[default_name]
+            if ws.max_row <= 1: # Empty or just header (if generated)?
+                # Usually default sheet is empty (max_row=1 if accessed or 0)
+                # Let's just delete it if we have other sheets
+                if len(wb.sheetnames) > 1:
+                    del wb[default_name]
+
 def save_workbook(wb, filename):
+    cleanup_empty_sheets(wb)
+    sort_sheets_alphabetically(wb)
     wb.save(filename)
