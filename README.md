@@ -1,6 +1,6 @@
 # Scientific Paper Analysis Tool
 
-Automate the extraction of structured data from scientific PDFs using Google's Gemini 1.5 Flash. This tool analyzes papers, extracts key information (like Hypothesis, Methodology, Results), and organizes them into a formatted Excel file, while automatically organizing your file system.
+Automate the extraction of structured data from scientific PDFs using Google's Gemini 2.5 Flash. This tool analyzes papers, extracts key information (like Hypothesis, Methodology, Results), and organizes them into a formatted Excel file, while automatically organizing your file system.
 
 ## Features
 
