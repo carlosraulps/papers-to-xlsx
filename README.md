@@ -13,7 +13,7 @@ Automate the extraction of structured data from scientific PDFs using Google's G
 ## Prerequisites
 
 -   Python 3.9+
--   A Google Cloud API Key with access to Gemini 1.5 Flash.
+-   A Google Cloud API Key with access to Gemini 2.5 Flash.
 
 ## Installation
 
