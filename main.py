@@ -72,7 +72,7 @@ def rename_pdf(original_path, data):
     return new_filename
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze PDF scientific papers using Gemini 1.5 Flash.")
+    parser = argparse.ArgumentParser(description="Analyze PDF scientific papers using Gemini 2.5 Flash.")
     parser.add_argument("folder", help="Path to the folder containing PDF files")
     args = parser.parse_args()
 
