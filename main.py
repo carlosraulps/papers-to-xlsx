@@ -4,7 +4,7 @@ import argparse
 import logging
 import json
 from dotenv import load_dotenv
-from analyzer import configure_gemini, analyze_pdf
+from analyzer import analyze_pdf
 from excel_writer import load_or_create_workbook, add_paper_to_workbook, save_workbook
 
 # Load env variables
@@ -22,6 +22,7 @@ logging.basicConfig(
 OUTPUT_DIR = "papers_analysis_output"
 LOG_FILE = "processed_log.json"
 EXCEL_FILE = "Paper_Analysis_Results.xlsx"
+ERROR_LOG_FILE = "error_log.txt"
 FULL_EXCEL_PATH = os.path.join(OUTPUT_DIR, EXCEL_FILE)
 
 def load_processed_log():
@@ -71,6 +72,8 @@ def rename_pdf(original_path, data):
     os.rename(original_path, new_path)
     return new_filename
 
+import reference_manager
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze PDF scientific papers using Gemini 2.5 Flash.")
     parser.add_argument("folder", help="Path to the folder containing PDF files")
@@ -86,12 +89,6 @@ def main():
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
 
-    # Configure Gemini
-    try:
-        configure_gemini()
-    except Exception as e:
-        logging.error(f"Configuration failed: {e}")
-        sys.exit(1)
 
     # Load Memory
     processed_log = load_processed_log()
@@ -99,7 +96,7 @@ def main():
     # Initialize Excel Workbook (Load existing or create new)
     wb = load_or_create_workbook(FULL_EXCEL_PATH)
     
-    # Find PDFs
+    # Find PDFs (recursively? No, usually flat, let's keep it flat)
     pdf_files = [f for f in os.listdir(input_folder) if f.lower().endswith('.pdf')]
     if not pdf_files:
         logging.warning(f"No PDF files found in {input_folder}")
@@ -110,9 +107,9 @@ def main():
     processed_count = 0
 
     for pdf_file in pdf_files:
-        # Check Memory
+        # Check Memory - Strict Check
         if pdf_file in processed_log:
-            logging.info(f"Skipping {pdf_file} (Already processed as {processed_log[pdf_file]})")
+            logging.info(f"Skipping {pdf_file} - Already analyzed")
             continue
 
         pdf_path = os.path.join(input_folder, pdf_file)
@@ -122,24 +119,28 @@ def main():
             logging.info(f"Processing: {pdf_file}")
             data = analyze_pdf(pdf_path)
             
-            # Write to Excel
+            # Post-Process: Citation Manager (Enrichment)
+            logging.info(f"Verifying citations for: {pdf_file}")
+            data = reference_manager.process(data)
+            
+            # Write to Excel (Sheet addition)
             add_paper_to_workbook(wb, data)
-            save_workbook(wb, FULL_EXCEL_PATH) # Save progress immediately
             
             # Rename File
             new_filename = rename_pdf(pdf_path, data)
             logging.info(f"Renamed {pdf_file} to {new_filename}")
             
             # Update Memory
-            processed_log[new_filename] = "Processed" # Track result name
-            # Also track original name if different, to avoid loop if script restarts before full completion?? 
-            # Actually, we renamed it, so the file 'pdf_file' no longer exists in the folder for next run.
-            # But if we strictly track 'processed files', we should maybe track the rename.
-            # The prompt says: "Update the 'memory' to reflect this new filename so it isn't treated as a new file next time."
-            # If we renamed it, next time we list dir, we will find 'new_filename'. 
-            # If 'new_filename' is in log, we skip.
+            processed_log[new_filename] = "Processed" # New name
+            processed_log[pdf_file] = "Processed (Renamed)" # Old name (crucial if file was just renamed but not moved)
             
             save_processed_log(processed_log)
+            
+            # Save Workbook (Incremental save, includes Dashboard update which calls save)
+            # This regenerates dashboard every paper, which is safer but slightly slower.
+            # Given user wants "run continuously", safe is better.
+            save_workbook(wb, FULL_EXCEL_PATH)
+            
             processed_count += 1
             logging.info(f"Successfully processed and saved: {new_filename}")
             
@@ -154,6 +155,13 @@ def main():
 
     if processed_count == 0:
         logging.info("No new papers to process.")
+        # We should still save workbook to ensure Dashboard is up to date if manually modified? 
+        # Or if this run was just to update dashboard for existing files? 
+        # User requirement 2: "When new papers are added... regenerate...". 
+        # Only strictly necessary if new papers added. 
+        # However, updating dashboard might be useful if the code changed.
+        # Let's do a save to refresh dashboard anyway.
+        save_workbook(wb, FULL_EXCEL_PATH)
     else:
         logging.info(f"Completed. Processed {processed_count} new papers.")
 
