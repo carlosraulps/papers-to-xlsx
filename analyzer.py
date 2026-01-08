@@ -2,39 +2,42 @@ import os
 import time
 import json
 import logging
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from google import genai
+from google.genai import types
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def configure_gemini():
-    """Configures the Gemini API using the key from environment."""
+def get_client():
+    """Initializes the Gen AI Client."""
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError("GOOGLE_API_KEY not found in environment variables.")
-    genai.configure(api_key=api_key)
+    return genai.Client(api_key=api_key)
 
 def analyze_pdf(pdf_path):
     """
     Uploads a PDF to Gemini and extracts analysis data in JSON format.
     """
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        client = get_client()
 
         logging.info(f"Uploading file: {pdf_path}")
-        sample_file = genai.upload_file(path=pdf_path, display_name=os.path.basename(pdf_path))
+        # New SDK file upload
+        file_ref = client.files.upload(file=pdf_path)
         
-        # Verify upload
-        while sample_file.state.name == "PROCESSING":
-            logging.info("Processing file...")
-            time.sleep(2)
-            sample_file = genai.get_file(sample_file.name)
-            
-        if sample_file.state.name == "FAILED":
+        # Verify upload (Active state check)
+        # New SDK might handle this differently, but let's check state if available
+        # Typically file_ref has metadata.
+        while file_ref.state.name == "PROCESSING":
+             logging.info("Processing file...")
+             time.sleep(2)
+             file_ref = client.files.get(name=file_ref.name)
+             
+        if file_ref.state.name == "FAILED":
              raise ValueError("File upload failed.")
 
-        logging.info(f"File uploaded successfully: {sample_file.name}")
+        logging.info(f"File uploaded successfully: {file_ref.name}")
 
         prompt = """
         You are a scientific paper analysis expert. 
@@ -58,18 +61,27 @@ def analyze_pdf(pdf_path):
         13. **Methodology & Tools**: How X/Y are measured/calculated (brief summary).
         14. **Central Result**: Key finding of the study.
         15. **Central Conclusion**: Main conclusion, specifically relating back to the hypothesis.
+        16. **Short Summary**: A concise summary of the paper's core physics in under 200 words.
+        17. **Glossary**: A list of 3-5 complex terms found in the paper with brief definitions (as a dictionary or list of objects).
         """
 
-        response = model.generate_content(
-            [sample_file, prompt],
-            generation_config={"response_mime_type": "application/json"}
+        # Generate Content with JSON response schema if supported, or text and parse.
+        # User requested using 'types' for structured JSON config if possible, but also "Return the result strictly as a valid JSON object".
+        # We can use response_mime_type="application/json" in config.
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[file_ref, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
         )
 
-        # Cleanup file after use to save storage/quota (optional, but good practice)
-        # genai.delete_file(sample_file.name) 
-
+        # Cleanup file? client.files.delete(name=file_ref.name)
+        
         return json.loads(response.text)
 
     except Exception as e:
         logging.error(f"Error extracting data from {pdf_path}: {e}")
         raise e
+
