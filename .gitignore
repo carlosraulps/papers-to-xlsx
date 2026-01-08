@@ -6,3 +6,6 @@ __pycache__/
 processed_log.json
 papers_analysis_output/
 past-docs/
+citations/
+.DS_Store
+.venv/
