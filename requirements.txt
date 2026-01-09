@@ -2,3 +2,6 @@ google-genai
 pandas
 openpyxl
 python-dotenv
+networkx
+matplotlib
+scipy
