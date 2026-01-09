@@ -35,11 +35,28 @@ def get_unique_sheet_name(workbook, base_name):
         count += 1
 
 def load_or_create_workbook(filename):
-    """Loads an existing workbook or creates a new one if it doesn't exist."""
+    """Loads an existing workbook or creates a new one if it doesn't exist or is corrupted."""
+    import zipfile
+    import os
+    import shutil
+    
     try:
         wb = openpyxl.load_workbook(filename)
         return wb
-    except FileNotFoundError:
+    except (FileNotFoundError):
+        # Normal case for new run
+        wb = openpyxl.Workbook()
+        if "Sheet" in wb.sheetnames:
+            del wb["Sheet"]
+        return wb
+    except (KeyError, zipfile.BadZipFile):
+        # File is corrupted (e.g. '[Content_Types].xml' missing)
+        print(f"WARNING: The Excel file {filename} is corrupted. Backing up and creating a new one.")
+        if os.path.exists(filename):
+            backup_name = filename + ".corrupted"
+            shutil.move(filename, backup_name)
+            print(f"Backed up corrupted file to: {backup_name}")
+            
         wb = openpyxl.Workbook()
         if "Sheet" in wb.sheetnames:
             del wb["Sheet"]
@@ -108,22 +125,38 @@ def add_paper_to_workbook(wb, paper_data):
         val = paper_data.get(key, "N/A")
         
         # Special formatting for Glossary
-        if key == "Glossary" and isinstance(val, list):
-            formatted_glossary = []
-            for item in val:
-                if isinstance(item, dict):
-                    # Try title case keys just in case, but usually prompt returns Term/Definition
-                    term = item.get("Term", item.get("term", ""))
-                    defn = item.get("Definition", item.get("definition", ""))
-                    if term:
-                        formatted_glossary.append(f"{term}: {defn}")
-            
-            if formatted_glossary:
-                val = "\n\n".join(formatted_glossary)
-            else:
-                 # Fallback if list structure is unexpected
-                val = str(val)
-                
+        if key == "Glossary":
+            import ast
+            # If it's a list, format it
+            if isinstance(val, list):
+                formatted_glossary = []
+                for item in val:
+                    if isinstance(item, dict):
+                        term = item.get("Term", item.get("term", ""))
+                        defn = item.get("Definition", item.get("definition", ""))
+                        if term:
+                            formatted_glossary.append(f"{term}: {defn}")
+                if formatted_glossary:
+                    val = "\n\n".join(formatted_glossary)
+                else:
+                    val = str(val)
+            # If it's a string looking like a list (from JSON load edge case), try to parse
+            elif isinstance(val, str) and val.strip().startswith("["):
+                try:
+                    glossary_list = ast.literal_eval(val)
+                    if isinstance(glossary_list, list):
+                        formatted_glossary = []
+                        for item in glossary_list:
+                            if isinstance(item, dict):
+                                term = item.get("Term", item.get("term", ""))
+                                defn = item.get("Definition", item.get("definition", ""))
+                                if term:
+                                    formatted_glossary.append(f"{term}: {defn}")
+                        if formatted_glossary:
+                            val = "\n\n".join(formatted_glossary)
+                except:
+                    pass
+        
         elif isinstance(val, list):
             val = ", ".join(str(v) for v in val)
         else:
@@ -142,13 +175,30 @@ def add_paper_to_workbook(wb, paper_data):
             cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
 def sort_sheets_alphabetically(wb):
-    """Sorts all sheets in the workbook alphabetically."""
-    # Get all sheet names
-    sheet_names = wb.sheetnames
-    # Sort them
-    sheet_names.sort()
+    """Sorts all sheets in the workbook alphabetically, EXCEPT special sheets."""
+    special_sheets = ["Knowledge Graph", "Dashboard"]
+    
+    # Get all paper sheets
+    paper_sheets = [n for n in wb.sheetnames if n not in special_sheets]
+    paper_sheets.sort()
+    
+    # Define desired order
+    final_order = []
+    
+    # 1. Knowledge Graph (if exists)
+    if "Knowledge Graph" in wb.sheetnames:
+        final_order.append("Knowledge Graph")
+        
+    # 2. Dashboard (if exists)
+    if "Dashboard" in wb.sheetnames:
+        final_order.append("Dashboard")
+        
+    # 3. Papers
+    final_order.extend(paper_sheets)
+    
     # Reorder
-    for i, name in enumerate(sheet_names):
+    # This loop works by moving each sheet to its correct relative position
+    for i, name in enumerate(final_order):
         wb.move_sheet(wb[name], offset=i - wb.index(wb[name]))
 
 def cleanup_empty_sheets(wb):
@@ -164,8 +214,8 @@ def cleanup_empty_sheets(wb):
 
 def save_workbook(wb, filename):
     cleanup_empty_sheets(wb)
-    sort_sheets_alphabetically(wb)
-    update_dashboard(wb) 
+    update_dashboard(wb) # Regenerate dashboard content
+    sort_sheets_alphabetically(wb) # Set final order (Graph, DB, Papers)
     wb.save(filename)
 
 def update_dashboard(wb):
@@ -178,12 +228,10 @@ def update_dashboard(wb):
         # Clear existing data
         ws.delete_rows(1, ws.max_row + 1)
     else:
-        # Create at index 0
-        ws = wb.create_sheet(DASHBOARD_NAME, 0)
+        # Create
+        ws = wb.create_sheet(DASHBOARD_NAME) 
     
-    # Ensure it's first
-    if wb.sheetnames[0] != DASHBOARD_NAME:
-        wb.move_sheet(ws, offset=-wb.index(ws))
+    # NOTE: Positioning is handled by sort_sheets_alphabetically now.
 
     # Headers
     headers = ["Sheet Name", "Title", "Authors", "Year", "Short Summary", "Glossary"]
