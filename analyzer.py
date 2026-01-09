@@ -69,17 +69,65 @@ def analyze_pdf(pdf_path):
         # User requested using 'types' for structured JSON config if possible, but also "Return the result strictly as a valid JSON object".
         # We can use response_mime_type="application/json" in config.
         
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[file_ref, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json"
         )
 
-        # Cleanup file? client.files.delete(name=file_ref.name)
+        # Retry Logic
+        max_retries = 2
+        attempt = 0
         
-        return json.loads(response.text)
+        while attempt <= max_retries:
+            logging.info(f"Analysis attempt {attempt + 1}")
+            try:
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[file_ref, prompt],
+                    config=config
+                )
+                
+                data = json.loads(response.text)
+                
+                # Validation Logic
+                short_summary = data.get("Short Summary", "")
+                glossary = data.get("Glossary", [])
+                
+                is_valid = True
+                missing_fields = []
+                
+                # Validate Short Summary
+                if not short_summary or str(short_summary).strip().lower() in ["n/a", "none"] or len(str(short_summary)) < 10:
+                     is_valid = False
+                     missing_fields.append("Short Summary")
+                
+                # Validate Glossary
+                glossary_valid = False
+                if isinstance(glossary, list) and len(glossary) > 0:
+                     glossary_valid = True
+                
+                if not glossary_valid:
+                    is_valid = False
+                    missing_fields.append("Glossary")
+                    
+                if is_valid:
+                     return data
+                     
+                logging.warning(f"Validation failed for {missing_fields}. Retrying...")
+                
+                # Update prompt for retry
+                retry_instruction = f"\n\nIMPORTANT: The previous extraction failed for fields: {missing_fields}. You MUST extract valid content for these. Do NOT return N/A. For Glossary, if definitions are hard to find, provide just the Key Terms with simple definitions."
+                prompt += retry_instruction
+                
+            except Exception as e:
+                logging.error(f"Attempt {attempt + 1} failed: {e}")
+            
+            attempt += 1
+
+        # If failed after retries, return what we have or try to patch Glossary
+        if not data.get("Glossary"):
+             data["Glossary"] = [{"Term": "N/A", "Definition": "Extraction Failed"}]
+             
+        return data
 
     except Exception as e:
         logging.error(f"Error extracting data from {pdf_path}: {e}")
