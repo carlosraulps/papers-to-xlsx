@@ -6,6 +6,7 @@ import json
 from dotenv import load_dotenv
 from analyzer import analyze_pdf
 from excel_writer import load_or_create_workbook, add_paper_to_workbook, save_workbook
+import graph_builder
 
 # Load env variables
 load_dotenv()
@@ -164,6 +165,19 @@ def main():
         save_workbook(wb, FULL_EXCEL_PATH)
     else:
         logging.info(f"Completed. Processed {processed_count} new papers.")
+
+    # Generate Knowledge Graph
+    try:
+        logging.info("Generating Knowledge Graph...")
+        graph_builder.update_workbook_with_graph(wb)
+        # Final Save (Pins sheets in correct order and saves everything)
+        save_workbook(wb, FULL_EXCEL_PATH)
+        logging.info(f"Final workbook saved with Knowledge Graph to {FULL_EXCEL_PATH}")
+    except Exception as e:
+        logging.error(f"Failed to build Knowledge Graph: {e}")
+        # Try to save anyway if graph failed, to ensure we don't lose previous work?
+        # Typically previous work was saved in loop.
+        pass
 
 if __name__ == "__main__":
     main()
