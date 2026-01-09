@@ -9,3 +9,6 @@ past-docs/
 citations/
 .DS_Store
 .venv/
+
+.geminiignore
+GEMINI.md
