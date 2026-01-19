@@ -8,6 +8,7 @@ from analyzer import analyze_pdf
 from excel_writer import load_or_create_workbook, add_paper_to_workbook, save_workbook
 import graph_builder
 import reference_manager
+import unicodedata
 
 # Load env variables
 load_dotenv()
@@ -171,15 +172,21 @@ def main():
     
     # Initialize Excel Workbook (Load existing or create new)
     wb = load_or_create_workbook(excel_file_path)
-    
+
     # --- Pre-processing: Sanitize Filenames ---
     logging.info("Sanitizing filenames...")
     for filename in os.listdir(input_folder):
         if not filename.lower().endswith(".pdf"):
              continue
              
+        # Normalize unicode characters to ASCII equivalents (e.g. Wójcik -> Wojcik)
+        # NFD decomposition splits characters from their accents
+        normalized_name = unicodedata.normalize('NFD', filename)
+        # Filter out non-spacing mark characters (accents)
+        ascii_name = "".join(c for c in normalized_name if unicodedata.category(c) != 'Mn')
+        
         # Replace spaces, double underscores, etc
-        new_name = filename.replace(" ", "_").replace("__", "_")
+        new_name = ascii_name.replace(" ", "_").replace("__", "_")
         # Keep dots, hyphens, underscores, alphanumerics
         new_name = "".join(c for c in new_name if c.isalnum() or c in "._-")
         
