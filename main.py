@@ -91,12 +91,13 @@ def select_model():
         all_models = list(client.models.list())
         valid_models = []
         
+        exclude_terms = ["embedding", "image", "audio", "tts", "robotics", "computer-use", "gemma"]
+        
         for m in all_models:
-             # Check if it supports content generation
-             # Attributes might be 'supported_generation_methods'
-             methods = getattr(m, 'supported_generation_methods', [])
-             if 'generateContent' in methods:
-                 valid_models.append(m.name)
+             # Heuristic filter: Only include Gemini models, exclude specialized/multimodal-only variants
+             name = m.name.lower()
+             if "gemini" in name and not any(term in name for term in exclude_terms):
+                  valid_models.append(m.name)
         
         # Sort for consistency
         valid_models.sort()
