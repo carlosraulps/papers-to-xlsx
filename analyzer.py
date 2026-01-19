@@ -23,9 +23,10 @@ def analyze_pdf(pdf_path, model_name="gemini-2.5-flash"):
         client = get_client()
 
         logging.info(f"Uploading file: {pdf_path}")
-        # Passing path directly allows SDK to handle open/close. 
-        # Mime type fixed via registry in main.py.
-        file_ref = client.files.upload(file=pdf_path)
+        # Use context manager to ensure file is closed immediately after upload
+        # Rely on mimetypes.add_type in main.py for detection. Do NOT pass mime_type arg (unsupported in some SDKs).
+        with open(pdf_path, 'rb') as f:
+            file_ref = client.files.upload(file=f)
         
         # Verify upload (Active state check)
         # New SDK might handle this differently, but let's check state if available
@@ -63,7 +64,9 @@ def analyze_pdf(pdf_path, model_name="gemini-2.5-flash"):
         14. **Central Result**: Key finding of the study.
         15. **Central Conclusion**: Main conclusion, specifically relating back to the hypothesis.
         16. **Short Summary**: A concise summary of the paper's core physics in under 200 words.
-        17. **Glossary**: A list of 3-5 complex terms found in the paper with brief definitions (as a dictionary or list of objects).
+        17. **Glossary**: A list of 3-5 complex terms found in the paper with brief definitions. 
+            Format strictly as a JSON list of objects: [{"Term": "Term1", "Definition": "Def1"}, {"Term": "Term2", "Definition": "Def2"}].
+            Do NOT use markdown tables or other formats.
         """
 
         # Generate Content with JSON response schema if supported, or text and parse.
