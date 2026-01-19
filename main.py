@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from analyzer import analyze_pdf
 from excel_writer import load_or_create_workbook, add_paper_to_workbook, save_workbook
 import graph_builder
+import reference_manager
 
 # Load env variables
 load_dotenv()
@@ -20,22 +21,16 @@ logging.basicConfig(
     ]
 )
 
-OUTPUT_DIR = "papers_analysis_output"
-LOG_FILE = "processed_log.json"
-EXCEL_FILE = "Paper_Analysis_Results.xlsx"
-ERROR_LOG_FILE = "error_log.txt"
-FULL_EXCEL_PATH = os.path.join(OUTPUT_DIR, EXCEL_FILE)
-
-def load_processed_log():
+def load_processed_log(log_path):
     """Loads the processed log from JSON."""
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, 'r') as f:
+    if os.path.exists(log_path):
+        with open(log_path, 'r') as f:
             return json.load(f)
     return {}
 
-def save_processed_log(log_data):
+def save_processed_log(log_data, log_path):
     """Saves the processed log to JSON."""
-    with open(LOG_FILE, 'w') as f:
+    with open(log_path, 'w') as f:
         json.dump(log_data, f, indent=4)
 
 def sanitize_filename(text):
@@ -73,37 +68,48 @@ def rename_pdf(original_path, data):
     os.rename(original_path, new_path)
     return new_filename
 
-import reference_manager
-
 def main():
     parser = argparse.ArgumentParser(description="Analyze PDF scientific papers using Gemini 2.5 Flash.")
     parser.add_argument("folder", help="Path to the folder containing PDF files")
     args = parser.parse_args()
 
-    input_folder = args.folder
+    # Resolve paths (Dynamic Output Logic)
+    input_folder = os.path.abspath(args.folder)
+    output_dir = os.path.join(input_folder, "outputs")
+    
+    # Define File Paths
+    log_file_path = os.path.join(output_dir, "processed_log.json")
+    excel_file_path = os.path.join(output_dir, "Paper_Analysis_Results.xlsx")
+    error_log_path = os.path.join(output_dir, "error_log.txt")
 
     if not os.path.exists(input_folder):
         logging.error(f"The directory {input_folder} does not exist.")
         sys.exit(1)
 
     # Ensure output directory exists
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        logging.info(f"Created output directory: {output_dir}")
 
     # Load Memory
-    processed_log = load_processed_log()
+    processed_log = load_processed_log(log_file_path)
     
     # Initialize Excel Workbook (Load existing or create new)
-    wb = load_or_create_workbook(FULL_EXCEL_PATH)
+    wb = load_or_create_workbook(excel_file_path)
     
     # Find PDFs (recursively? No, usually flat, let's keep it flat)
     pdf_files = [f for f in os.listdir(input_folder) if f.lower().endswith('.pdf')]
+    
     if not pdf_files:
         logging.warning(f"No PDF files found in {input_folder}")
+        # Even if no PDFs, we might want to save the empty workbook or just exit
+        if processed_log:
+             # If we have history but no current files (maybe they were moved?), 
+             # just exiting is fine.
+             pass
         sys.exit(0)
 
-    logging.info(f"Scanning {len(pdf_files)} PDF files...")
+    logging.info(f"Scanning {len(pdf_files)} PDF files in {input_folder}...")
     
     processed_count = 0
 
@@ -122,25 +128,24 @@ def main():
             
             # Post-Process: Citation Manager (Enrichment)
             logging.info(f"Verifying citations for: {pdf_file}")
-            data = reference_manager.process(data)
+            # Pass output_dir to reference manager
+            data = reference_manager.process(data, output_dir)
             
             # Write to Excel (Sheet addition)
             add_paper_to_workbook(wb, data)
             
-            # Rename File
+            # Rename File (Renaming happens in INPUT folder, as per organization feature)
             new_filename = rename_pdf(pdf_path, data)
             logging.info(f"Renamed {pdf_file} to {new_filename}")
             
             # Update Memory
             processed_log[new_filename] = "Processed" # New name
-            processed_log[pdf_file] = "Processed (Renamed)" # Old name (crucial if file was just renamed but not moved)
+            processed_log[pdf_file] = "Processed (Renamed)" # Old name
             
-            save_processed_log(processed_log)
+            save_processed_log(processed_log, log_file_path)
             
-            # Save Workbook (Incremental save, includes Dashboard update which calls save)
-            # This regenerates dashboard every paper, which is safer but slightly slower.
-            # Given user wants "run continuously", safe is better.
-            save_workbook(wb, FULL_EXCEL_PATH)
+            # Save Workbook (Incremental save)
+            save_workbook(wb, excel_file_path)
             
             processed_count += 1
             logging.info(f"Successfully processed and saved: {new_filename}")
@@ -148,21 +153,14 @@ def main():
         except Exception as e:
             error_msg = str(e)
             logging.error(f"Failed to process {pdf_file}. Error: {error_msg}")
-            # Move error logging to the main error log in output dir
-            error_log_path = os.path.join(OUTPUT_DIR, ERROR_LOG_FILE)
             timestamp = logging.Formatter('%(asctime)s').format(logging.LogRecord(None, None, None, None, None, None, None))
             with open(error_log_path, "a") as f:
                  f.write(f"[{timestamp}] Error processing {pdf_file}: {error_msg}\n")
 
     if processed_count == 0:
         logging.info("No new papers to process.")
-        # We should still save workbook to ensure Dashboard is up to date if manually modified? 
-        # Or if this run was just to update dashboard for existing files? 
-        # User requirement 2: "When new papers are added... regenerate...". 
-        # Only strictly necessary if new papers added. 
-        # However, updating dashboard might be useful if the code changed.
-        # Let's do a save to refresh dashboard anyway.
-        save_workbook(wb, FULL_EXCEL_PATH)
+        # Ensure dashboard is up to date and sheets are sorted
+        save_workbook(wb, excel_file_path)
     else:
         logging.info(f"Completed. Processed {processed_count} new papers.")
 
@@ -170,13 +168,11 @@ def main():
     try:
         logging.info("Generating Knowledge Graph...")
         graph_builder.update_workbook_with_graph(wb)
-        # Final Save (Pins sheets in correct order and saves everything)
-        save_workbook(wb, FULL_EXCEL_PATH)
-        logging.info(f"Final workbook saved with Knowledge Graph to {FULL_EXCEL_PATH}")
+        # Final Save
+        save_workbook(wb, excel_file_path)
+        logging.info(f"Final workbook saved with Knowledge Graph to {excel_file_path}")
     except Exception as e:
         logging.error(f"Failed to build Knowledge Graph: {e}")
-        # Try to save anyway if graph failed, to ensure we don't lose previous work?
-        # Typically previous work was saved in loop.
         pass
 
 if __name__ == "__main__":

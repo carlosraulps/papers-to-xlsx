@@ -4,27 +4,32 @@ import logging
 from google import genai
 from google.genai import types
 
-# Database File
-CITATIONS_DIR = "citations"
-DB_FILE = os.path.join(CITATIONS_DIR, "references_database.json")
+def get_citations_dir(output_dir):
+    return os.path.join(output_dir, "citations")
 
-def ensure_citations_dir():
-    if not os.path.exists(CITATIONS_DIR):
-        os.makedirs(CITATIONS_DIR)
+def get_db_file(output_dir):
+    return os.path.join(get_citations_dir(output_dir), "references_database.json")
 
-def load_database():
-    ensure_citations_dir()
-    if os.path.exists(DB_FILE):
+def ensure_citations_dir(output_dir):
+    citations_dir = get_citations_dir(output_dir)
+    if not os.path.exists(citations_dir):
+        os.makedirs(citations_dir)
+
+def load_database(output_dir):
+    ensure_citations_dir(output_dir)
+    db_file = get_db_file(output_dir)
+    if os.path.exists(db_file):
         try:
-            with open(DB_FILE, 'r') as f:
+            with open(db_file, 'r') as f:
                 return json.load(f)
         except:
             return []
     return []
 
-def save_database(db):
-    ensure_citations_dir()
-    with open(DB_FILE, 'w') as f:
+def save_database(db, output_dir):
+    ensure_citations_dir(output_dir)
+    db_file = get_db_file(output_dir)
+    with open(db_file, 'w') as f:
         json.dump(db, f, indent=4)
 
 def check_missing_data(metadata):
@@ -107,9 +112,9 @@ def enrich_with_grounding(metadata, missing_keys):
     
     return metadata
 
-def export_bibtex(db):
+def export_bibtex(db, output_dir):
     """Exports database to library.bib"""
-    filename = os.path.join(CITATIONS_DIR, "library.bib")
+    filename = os.path.join(get_citations_dir(output_dir), "library.bib")
     with open(filename, 'w') as f:
         for ref in db:
             # Create a simple citation key: AuthorYearTitleWord
@@ -135,9 +140,9 @@ def export_bibtex(db):
             f.write(f"  doi = {{{ref.get('DOI', 'N/A')}}}\n")
             f.write("}\n\n")
 
-def export_apa(db):
+def export_apa(db, output_dir):
     """Exports to APA text file."""
-    filename = os.path.join(CITATIONS_DIR, "references_apa.txt")
+    filename = os.path.join(get_citations_dir(output_dir), "references_apa.txt")
     with open(filename, 'w') as f:
         for ref in db:
             # Very basic APA approximation
@@ -161,9 +166,9 @@ def export_apa(db):
                 entry += f" https://doi.org/{doi}"
             f.write(entry + "\n\n")
 
-def export_aps(db):
+def export_aps(db, output_dir):
     """Exports to APS text file."""
-    filename = os.path.join(CITATIONS_DIR, "references_aps.txt")
+    filename = os.path.join(get_citations_dir(output_dir), "references_aps.txt")
     with open(filename, 'w') as f:
         for ref in db:
             # Basic APS: Author, Journal Volume, Page (Year).
@@ -180,7 +185,7 @@ def export_aps(db):
             entry = f"{authors}, {journal} {volume}, {pages} ({year})."
             f.write(entry + "\n")
 
-def process(paper_data):
+def process(paper_data, output_dir):
     """Main processing function for references."""
     # 1. Extract Metadata specific for citations
     metadata = {k: paper_data.get(k, "N/A") for k in ["Title", "Authors", "Journal", "Volume", "Pages", "Year", "DOI"]}
@@ -198,7 +203,7 @@ def process(paper_data):
             paper_data[k] = v
     
     # 4. Save to DB
-    db = load_database()
+    db = load_database(output_dir)
     # Check if exists (by title?) - prevent dupes
     current_title = metadata.get("Title", "").lower()
     exists = False
@@ -210,11 +215,11 @@ def process(paper_data):
     if not exists:
         db.append(metadata)
     
-    save_database(db)
+    save_database(db, output_dir)
     
     # 5. Export all
-    export_bibtex(db)
-    export_apa(db)
-    export_aps(db)
+    export_bibtex(db, output_dir)
+    export_apa(db, output_dir)
+    export_aps(db, output_dir)
     
     return paper_data # Return potentially updated data
