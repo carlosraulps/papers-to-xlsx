@@ -188,15 +188,16 @@ def update_workbook_with_graph(wb):
     PAPER_COLOR = "#FF4500" # Bright Red/Orange-Red
     CONCEPT_COLOR = "#00BFFF" # Deep Sky Blue
     EDGE_COLOR = "#505050"
-    TEXT_COLOR = "white"
+    TEXT_COLOR = "black" # Black text on white stickers for readability
     
     # Dynamic Canvas Scaling
     num_papers = len(paper_nodes)
     num_nodes = G.number_of_nodes()
     
-    # Base size (10 inches) + Growth Factor (0.5 inch per paper)
-    calc_size = 10 + (num_papers * 0.5)
-    final_size = min(calc_size, 50) # Cap at 50x50
+    # Base size (20 inches) for breathing room
+    # Growth Factor (0.5 inch per paper)
+    calc_size = 20 + (num_papers * 0.5)
+    final_size = min(calc_size, 60) # Cap at 60x60
     
     logging.info(f"Graph Scaling: {num_papers} papers -> Canvas Size {final_size}x{final_size} inches")
     
@@ -205,52 +206,78 @@ def update_workbook_with_graph(wb):
     ax = plt.gca()
     ax.set_facecolor(BG_COLOR)
     
-    # Dynamic Layout Physics
-    # k: Optimal distance between nodes. 
-    # General rule: k ~ 1/sqrt(n). For disconnected/sparse graphs, larger k helps.
-    import math
-    if num_nodes > 0:
-        k_val = 1.0 / math.sqrt(num_nodes)
-        # Tweak: multiply by a factor to spread out more on larger canvas
-        k_val = k_val * 2.0 
-    else:
-        k_val = 0.5
-        
-    pos = nx.spring_layout(G, k=k_val, iterations=50, seed=42)
+    # Dynamic Layout Physics: Kamada-Kawai for better separation
+    import textwrap
+    import scipy # explicit dependency for kamada_kawai
     
-    # Sizes
+    try:
+        # Scale forces slightly by number of nodes
+        pos = nx.kamada_kawai_layout(G, scale=num_nodes * 0.1 if num_nodes > 20 else 2.0)
+    except Exception as e:
+        logging.warning(f"Kamada-Kawai layout failed ({e}), falling back to Spring.")
+        pos = nx.spring_layout(G, k=0.8, iterations=50, seed=42)
+    
+    # Sizes & Styles
     node_sizes = []
     node_colors = []
+    node_borders = []
     
     for node in G.nodes():
+        degree = G.degree(node)
         if G.nodes[node].get("type") == "paper":
-            node_sizes.append(350)
+            # Paper nodes bigger
+            size = 800 + (degree * 100)
+            node_sizes.append(size)
             node_colors.append(PAPER_COLOR)
         else:
-            degree = G.degree(node)
-            size = 150 + (degree * 200) # Slightly larger concept nodes
+            # Concept nodes scaled by importance
+            size = 300 + (degree * 150) 
             node_sizes.append(size)
             node_colors.append(CONCEPT_COLOR)
             
-    # Draw Nodes
-    nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color=node_colors, alpha=0.9, ax=ax)
+    # Draw Nodes with Borders
+    nx.draw_networkx_nodes(G, pos, 
+                          node_size=node_sizes, 
+                          node_color=node_colors, 
+                          alpha=1.0, 
+                          linewidths=2, 
+                          edgecolors="white", # Pop against dark bg
+                          ax=ax)
     
-    # Draw Edges with thickness based on weight
+    # Draw Edges with Curvature and varying thickness
     edges = G.edges()
     weights = [G[u][v].get('weight', 1) for u, v in edges]
+    widths = [w * 0.8 for w in weights] # Slightly thicker
     
-    # Scale weights for visual thickness (e.g. 1 -> 0.5, 5 -> 2.5)
-    widths = [w * 0.5 for w in weights]
+    nx.draw_networkx_edges(G, pos, 
+                           edgelist=edges, 
+                           width=widths, 
+                           edge_color=EDGE_COLOR, 
+                           alpha=0.6, 
+                           connectionstyle="arc3,rad=0.1", # Curved lines
+                           ax=ax)
     
-    nx.draw_networkx_edges(G, pos, edgelist=edges, width=widths, edge_color=EDGE_COLOR, alpha=0.6, ax=ax)
-    
-    # Draw Labels with improved font size
-    nx.draw_networkx_labels(G, pos, font_size=9, font_color=TEXT_COLOR, font_family="sans-serif", ax=ax)
+    # Draw Labels with Text Wrapping and Stickers
+    # 1. Prepare User Labels (Wrapped)
+    labels = {}
+    for node in G.nodes():
+        # Wrap text at ~15 chars
+        labels[node] = "\n".join(textwrap.wrap(str(node), width=15))
+        
+    # 2. Draw
+    nx.draw_networkx_labels(G, pos, 
+                            labels=labels,
+                            font_size=10, 
+                            font_weight="bold",
+                            font_color=TEXT_COLOR, 
+                            font_family="sans-serif", 
+                            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="none", alpha=0.85),
+                            ax=ax)
     
     plt.axis('off')
     plt.tight_layout()
     
-    # Save to Buffer with high DPI for quality insertion in Excel
+    # Save to Buffer
     img_buffer = io.BytesIO()
     plt.savefig(img_buffer, format='png', facecolor=BG_COLOR, edgecolor='none', dpi=200)
     img_buffer.seek(0)
