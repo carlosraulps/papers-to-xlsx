@@ -23,20 +23,22 @@ def analyze_pdf(pdf_path, model_name="gemini-2.5-flash"):
         client = get_client()
 
         logging.info(f"Uploading file: {pdf_path}")
-        # Use context manager to ensure file is closed immediately after upload
+        # Use context manager to ensure file is closed
         with open(pdf_path, 'rb') as f:
             try:
-                # Explicitly set mime_type as requested by the SDK error message
-                file_ref = client.files.upload(file=f, mime_type='application/pdf')
-            except TypeError:
-                # Handle potential "unexpected keyword argument" if SDK differs
-                logging.warning("mime_type argument failed, trying config approach...")
+                # Try passing config object (SDK v1 approach)
+                # 'types' is imported from google.genai
+                upload_config = types.UploadFileConfig(mime_type='application/pdf')
+                file_ref = client.files.upload(file=f, config=upload_config)
+            except Exception as e_config:
+                logging.warning(f"Upload with object config failed: {e_config}")
                 try:
-                     # Try config object approach for newer/different SDK versions
-                     file_ref = client.files.upload(file=f, config={'mime_type': 'application/pdf'})
-                except Exception:
-                     # Fallback to no argument (relying on detection or failure)
-                     file_ref = client.files.upload(file=f)
+                    # Try dict config
+                    file_ref = client.files.upload(file=f, config={'mime_type': 'application/pdf'})
+                except Exception as e_dict:
+                    logging.warning(f"Upload with dict config failed: {e_dict}")
+                    # Fallback to no config (relying on mimetypes registry)
+                    file_ref = client.files.upload(file=f)
         
         # Verify upload (Active state check)
         # New SDK might handle this differently, but let's check state if available
