@@ -9,6 +9,7 @@ from excel_writer import load_or_create_workbook, add_paper_to_workbook, save_wo
 import graph_builder
 import reference_manager
 import unicodedata
+import mimetypes
 
 # Load env variables
 load_dotenv()
@@ -218,6 +219,20 @@ def main():
     # Initialize Excel Workbook (Load existing or create new)
     wb = load_or_create_workbook(excel_file_path)
 
+    # --- Sync Step 2: Excel Sheet Check (Truth) ---
+    # Catch "Zombie" files that are in Excel but not in Log
+    existing_sheets = set(wb.sheetnames)
+    logging.info(f"Syncing logs with {len(existing_sheets)} Excel sheets...")
+    
+    excel_recovered = 0
+    # Create a mapping of likely sheet names for files in input folder
+    # This is tricky because sheet names are truncated. 
+    # Better strategy: Filter list later based on if we "would" generate a name that exists.
+    
+    # Actually, let's do it in the loop or pre-calculate. 
+    # Let's add the Registry fix here too.
+    mimetypes.add_type("application/pdf", ".pdf")
+
     # --- Pre-processing: Sanitize Filenames ---
     logging.info("Sanitizing filenames...")
     for filename in os.listdir(input_folder):
@@ -277,6 +292,33 @@ def main():
         pdf_path = os.path.join(input_folder, pdf_file)
         
         try:
+            # Check if Sheet exists (Zombie Check)
+            # Heuristic: Match filename stem against sheet names.
+            # Filenames: Author_Year_Title.pdf (underscores)
+            # Sheet names: Author_Year_Title (max 31 chars)
+            
+            file_stem = os.path.splitext(pdf_file)[0]
+            # Normalize stem to match sheet logic (first 31 chars)
+            likely_sheet_name = file_stem[:31]
+            
+            # Check for near matches in existing sheets
+            # We check if likely_sheet_name is a prefix of any existing sheet
+            # or if any existing sheet is a prefix of likely_sheet_name
+            sheet_exists = False
+            for sheet in existing_sheets:
+                if sheet == likely_sheet_name or sheet.startswith(likely_sheet_name) or likely_sheet_name.startswith(sheet):
+                     # Double check year/author alignment to avoid false positives?
+                     # If the sheet name is "Wojcik_2012_...", and file is "Wojcik_2012_Collision...", match is highly likely.
+                     sheet_exists = True
+                     break
+            
+            if sheet_exists:
+                 logging.info(f"Skipping {pdf_file} - Sheet already exists in Excel (Zombie Recovery)")
+                 # Update log so we don't check again
+                 processed_log[pdf_file] = "Processed (Recovered from Excel)"
+                 save_processed_log(processed_log, log_file_path)
+                 continue
+            
             # Analyze
             logging.info(f"Processing: {pdf_file}")
             data = analyze_pdf(pdf_path, model_name=model_name)
