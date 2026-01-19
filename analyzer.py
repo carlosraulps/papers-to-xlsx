@@ -25,7 +25,7 @@ def analyze_pdf(pdf_path, model_name="gemini-2.5-flash"):
         logging.info(f"Uploading file: {pdf_path}")
         # Use context manager to ensure file is closed immediately after upload
         with open(pdf_path, 'rb') as f:
-            file_ref = client.files.upload(file=f)
+            file_ref = client.files.upload(file=f, mime_type='application/pdf')
         
         # Verify upload (Active state check)
         # New SDK might handle this differently, but let's check state if available

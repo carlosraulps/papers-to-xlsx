@@ -170,6 +170,51 @@ def main():
     # Load Memory
     processed_log = load_processed_log(log_file_path)
     
+    # --- Sync Step: Recover from Crash ---
+    # Check if files in DB but missing from Log
+    try:
+        db = reference_manager.load_database(output_dir)
+        logging.info(f"Syncing logs with {len(db)} database entries...")
+        
+        recovered_count = 0
+        for entry in db:
+            # Reconstruct expected filename from metadata
+            # Matches logic in reference_manager.process
+            authors = entry.get("Authors", "Unknown")
+            if isinstance(authors, list):
+                 first_author = authors[0].split()[-1] if authors else "Unknown"
+            else:
+                 first_author = authors.split(',')[0].split()[-1] if ',' in authors else authors.split()[-1]
+            
+            year = str(entry.get("Year", "0000"))
+            title = entry.get("Title", "Untitled")
+            
+            # Sanitize parts
+            first_author = "".join(x for x in first_author if x.isalnum())
+            year = "".join(x for x in year if x.isalnum())[:4]
+            title = "".join(x for x in title if x.isalnum() or x in " -_")
+            title = title[:150]
+            
+            # Reconstruct Filename
+            expected_name = f"{first_author}-{year}-{title}.pdf"
+            expected_name = " ".join(expected_name.split()).replace(" ", "_")
+            
+            # Check if this file exists in input folder
+            full_path = os.path.join(input_folder, expected_name)
+            
+            if os.path.exists(full_path):
+                # If exists and NOT in log, add it
+                if expected_name not in processed_log:
+                    processed_log[expected_name] = "Processed (Recovered)"
+                    recovered_count += 1
+        
+        if recovered_count > 0:
+            logging.info(f"Recovered {recovered_count} files from database into processed log.")
+            save_processed_log(processed_log, log_file_path)
+            
+    except Exception as e:
+        logging.warning(f"Log sync warning: {e}")
+        
     # Initialize Excel Workbook (Load existing or create new)
     wb = load_or_create_workbook(excel_file_path)
 
