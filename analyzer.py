@@ -19,26 +19,38 @@ def analyze_pdf(pdf_path, model_name="gemini-2.5-flash"):
     """
     Uploads a PDF to Gemini and extracts analysis data in JSON format.
     """
+    import io
     try:
         client = get_client()
 
         logging.info(f"Uploading file: {pdf_path}")
-        # Use context manager to ensure file is closed
+        
+        # Read file content into memory to avoid "I/O operation on closed file"
         with open(pdf_path, 'rb') as f:
+            file_content = f.read()
+            
+        f_bytes = io.BytesIO(file_content)
+
+        try:
+            # Try passing config object (SDK v1 approach)
+            upload_config = types.UploadFileConfig(mime_type='application/pdf')
+            # Reset pointer just in case
+            f_bytes.seek(0)
+            file_ref = client.files.upload(file=f_bytes, config=upload_config)
+        except Exception as e_config:
+            logging.warning(f"Upload with object config failed: {e_config}")
             try:
-                # Try passing config object (SDK v1 approach)
-                # 'types' is imported from google.genai
-                upload_config = types.UploadFileConfig(mime_type='application/pdf')
-                file_ref = client.files.upload(file=f, config=upload_config)
-            except Exception as e_config:
-                logging.warning(f"Upload with object config failed: {e_config}")
-                try:
-                    # Try dict config
-                    file_ref = client.files.upload(file=f, config={'mime_type': 'application/pdf'})
-                except Exception as e_dict:
-                    logging.warning(f"Upload with dict config failed: {e_dict}")
-                    # Fallback to no config (relying on mimetypes registry)
-                    file_ref = client.files.upload(file=f)
+                # Try dict config
+                # Reset pointer
+                f_bytes.seek(0)
+                file_ref = client.files.upload(file=f_bytes, config={'mime_type': 'application/pdf'})
+            except Exception as e_dict:
+                logging.warning(f"Upload with dict config failed: {e_dict}")
+                # Fallback to no config (relying on mimetypes registry)
+                # Note: BytesIO has no filename for guessing, so this might prompt an error if mime_type isn't inferred.
+                # But we'll try.
+                f_bytes.seek(0)
+                file_ref = client.files.upload(file=f_bytes)
         
         # Verify upload (Active state check)
         # New SDK might handle this differently, but let's check state if available
