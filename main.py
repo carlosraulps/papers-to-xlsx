@@ -230,10 +230,32 @@ def main():
         # User wants sync: "deleted papers in dir dont do that".
         # So if not in input_folder, remove from log.
         if not os.path.exists(full_path):
-             # Check if it was renamed to something else that IS there?
-             # Too complex. Simple rule: If filename in log missing from disk, delete entry.
-             zombies.append(processed_file)
-             del processed_log[processed_file]
+             # ZOMBIE RECOVERY logic for Unicode (Wójcik vs Wojcik)
+             # The key in JSON might use one normalization, disk another.
+             # Let's try normalizing the key to match disk.
+             
+             # 1. Check if the file is actually there but name is just slightly different encoding
+             # List directory and fuzzy match?
+             found_fuzzy = False
+             
+             # Try normalized NFC (standard for MacOS paths sometimes)
+             import unicodedata
+             norm_key = unicodedata.normalize('NFC', processed_file)
+             if os.path.exists(os.path.join(input_folder, norm_key)):
+                 found_fuzzy = True
+             
+             # Try NFD (MacOS often decomposes)
+             norm_key_nfd = unicodedata.normalize('NFD', processed_file)
+             if os.path.exists(os.path.join(input_folder, norm_key_nfd)):
+                 found_fuzzy = True
+                 
+             if not found_fuzzy:
+                 zombies.append(processed_file)
+                 del processed_log[processed_file]
+                 pass
+             else:
+                 # It exists, just encoding mismatch. Keep it.
+                 pass
 
     if zombies:
         logging.info(f"Removed {len(zombies)} zombie entries from log (files deleted or moved): {zombies[:3]}...")

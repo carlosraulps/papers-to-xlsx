@@ -100,12 +100,60 @@ def add_paper_to_workbook(wb, paper_data):
     # Author_Year_ is roughly 10+1+4+1 = 16 chars. 
     # Remaining for title = 31 - 16 = 15 chars.
     
+    # Author_Year_ is roughly 10+1+4+1 = 16 chars. 
+    # Remaining for title = 31 - 16 = 15 chars.
+    
     base_name = f"{author_part}_{year_part}_{short_title}"
     
-    # get_unique_sheet_name will truncate the whole thing to 31 if needed
-    sheet_name = get_unique_sheet_name(wb, base_name)
+    # STRICT DEDUPLICATION LOGIC:
+    # 1. Check if a sheet with this EXACT base name exists.
+    # 2. If 'base_name' is too long, it gets truncated. We need to match the truncated version.
     
-    ws = wb.create_sheet(title=sheet_name)
+    target_name = clean_sheet_name(base_name)
+    
+    # Search for existing sheet that looks like a match (Author + Year)
+    # This prevents creating "Author_Year_Title_2" if "Author_Year_Title" exists.
+    
+    existing_sheet = None
+    if target_name in wb.sheetnames:
+        existing_sheet = wb[target_name]
+    else:
+        # Check iteratively if we already made a version of this
+        # e.g., if target_name is "Smith_2024_Analysi", check if that exists.
+        pass
+
+    if existing_sheet:
+        ws = existing_sheet
+        # Clear existing data to overwrite
+        ws.delete_rows(1, ws.max_row + 1)
+        # sheet_name remains the same
+    else:
+        # Create new unique name (only if it truly doesn't exist)
+        # But wait, if we are strictly deduplicating, we shouldn't really be creating _2 
+        # unless it is ACTUALLY a different paper (collision).
+        # But our file management now guarantees unique filenames (v2, v3). 
+        # So we should trust that if the file is "Smith_2024_..._v2", the title/data might be different OR same.
+        # If it's a version, we might WANT a separate sheet?
+        # User said: "duplicated names... even deleted papers... I just want one the best version".
+        # So overwrite is safer.
+        
+        # If the sheet name is taken by a DIFFERENT paper (collision), we must use unique.
+        # But how to distinguish?
+        # Assume overwrite is desired behavior for "Re-analysis".
+        
+        # If name usage collision (different paper, same short name), we DO need _2.
+        # But for *same* paper re-run, we want same sheet.
+        
+        # Current 'get_unique_sheet_name' ALWAYS increments.
+        # Let's try to fetch existing first.
+        
+        if target_name in wb.sheetnames:
+             ws = wb[target_name]
+             ws.delete_rows(1, ws.max_row + 1)
+        else:
+             # Only create new if strict match not found
+             sheet_name = get_unique_sheet_name(wb, base_name)
+             ws = wb.create_sheet(title=sheet_name)
     
     # Headers
     ws['A1'] = "Category/Question"
