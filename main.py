@@ -33,7 +33,7 @@ def load_processed_log(log_path):
 def save_processed_log(log_data, log_path):
     """Saves the processed log to JSON."""
     with open(log_path, 'w') as f:
-        json.dump(log_data, f, indent=4)
+        json.dump(log_data, f, indent=4, sort_keys=True)
 
 def sanitize_filename(text):
     """Sanitizes text for use in filenames."""

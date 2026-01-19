@@ -231,6 +231,17 @@ def process(paper_data, output_dir, model_name="gemini-2.5-flash", pdf_path=None
     if not exists:
         db.append(metadata)
     
+    # Sort DB Alphabetically (Author -> Year -> Title)
+    def sort_key(item):
+        authors = item.get("Authors", "")
+        if isinstance(authors, list):
+            auth_str = str(authors[0]) if authors else ""
+        else:
+            auth_str = str(authors)
+        return (auth_str.lower(), str(item.get("Year", "")), item.get("Title", "").lower())
+    
+    db.sort(key=sort_key)
+    
     save_database(db, output_dir)
     
     # 5. Export all
