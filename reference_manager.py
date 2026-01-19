@@ -97,7 +97,7 @@ def enrich_with_grounding(metadata, missing_keys, model_name="gemini-2.5-flash")
         # Clean markdown
         if text:
             text = text.replace("```json", "").replace("```", "").strip()
-                try:
+            try:
                 found_data = json.loads(text)
                 # Merge found data
                 for k, v in found_data.items():
