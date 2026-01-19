@@ -11,21 +11,39 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 import re
 
-def clean_term(term):
+
+def normalize_node_label(text):
     """
-    Cleans a term by removing parentheses contents, special chars, and Title Casing.
+    Sanitizes node names.
+    - Strips []():.
+    - Replaces _ with space
+    - Title Case
+    - Filters N/A, Unknown, short
     """
-    if not term:
-        return ""
-    # Remove contents inside parentheses e.g. "DFT (Density Functional Theory)" -> "DFT "
-    term = re.sub(r'\(.*?\)', '', term)
-    # Remove chars like [ ]
-    term = re.sub(r'[\[\]]', '', term)
-    # Remove non-alphanumeric (except space, hyphen) - optional but cleaner
-    # term = re.sub(r'[^a-zA-Z0-9 \-]', '', term)
+    if not text:
+        return None
+        
+    # Replace separators with space
+    text = text.replace("_", " ").replace("-", " ")
     
-    # Strip and Title Case
-    return term.strip().title()
+    # Remove specific punctuation chars
+    # Stripping []():. 
+    import re
+    text = re.sub(r'[\[\]\(\):.]', '', text)
+    
+    # Extra whitespace cleanup
+    text = " ".join(text.split())
+    
+    # Title Case
+    text = text.title()
+    
+    # Filtering
+    if len(text) < 2:
+        return None
+    if text.lower() in ["n/a", "unknown", "none"]:
+        return None
+        
+    return text
 
 def extract_terms_from_sheet(sheet):
     """
@@ -56,6 +74,12 @@ def extract_terms_from_sheet(sheet):
     # Logic 1: Glossary Parsing
     import ast
     
+    # Helper to clean and add
+    def add_term(t):
+        norm = normalize_node_label(t)
+        if norm:
+            terms.add(norm)
+
     # Try parsing as JSON/List repr first (if saved as raw list)
     # OR if saved as "Term: Definition", parse lines.
     
@@ -64,10 +88,10 @@ def extract_terms_from_sheet(sheet):
         lines = glossary_text.split('\n')
         for line in lines:
             if ":" in line:
-                term = line.split(":")[0]
-                cleaned = clean_term(term)
-                if cleaned and len(cleaned.split()) <= 3:
-                    terms.add(cleaned)
+                # Remove bullets if present
+                clean_line = line.replace("•", "").strip()
+                term = clean_line.split(":")[0]
+                add_term(term)
 
     # Case B: Raw List/JSON "[{...}]" (If not formatted yet)
     elif glossary_text.strip().startswith("["):
@@ -77,9 +101,7 @@ def extract_terms_from_sheet(sheet):
                 for item in glossary_list:
                     if isinstance(item, dict):
                         term = item.get("Term", item.get("term", ""))
-                        cleaned = clean_term(term)
-                        if cleaned and len(cleaned.split()) <= 3:
-                            terms.add(cleaned)
+                        add_term(term)
         except:
             pass
 
@@ -87,11 +109,15 @@ def extract_terms_from_sheet(sheet):
     if len(terms) < 3 and variables_text:
         parts = [p.strip() for p in variables_text.replace(" and ", ",").split(',')]
         for p in parts:
-            cleaned = clean_term(p)
-            if cleaned and len(cleaned.split()) <= 3:
-                terms.add(cleaned)
+             add_term(p)
 
-    return list(terms)[:5] 
+    return list(terms)[:8] # Increased limit slightly
+
+def get_keywords(text):
+    """Splits text into meaningful keywords (excluding stop words)."""
+    stop_words = {"the", "of", "and", "in", "for", "a", "an", "to", "with", "on", "at", "by", "from"}
+    words = text.lower().split()
+    return {w for w in words if w not in stop_words and len(w) > 2}
 
 def update_workbook_with_graph(wb):
     """
@@ -104,32 +130,56 @@ def update_workbook_with_graph(wb):
     skip_sheets = ["Dashboard", "Knowledge Graph"]
     
     paper_nodes = []
-    concept_nodes = set()
+    concept_nodes = []
     
     logging.info("Building Knowledge Graph from workbook data...")
     
+    # 1. Collect all Nodes
     for sheet_name in wb.sheetnames:
         if sheet_name in skip_sheets:
             continue
             
         sheet = wb[sheet_name]
         
-        # 1. Add Paper Node
+        # Add Paper Node
         G.add_node(sheet_name, type="paper")
         paper_nodes.append(sheet_name)
         
-        # 2. Extract Terms
+        # Extract Terms
         terms = extract_terms_from_sheet(sheet)
         
-        # 3. Add Edges
+        # Add Concept Nodes & Connect to Paper (Direct Link)
         for term in terms:
-            G.add_node(term, type="concept")
-            concept_nodes.add(term)
-            G.add_edge(sheet_name, term)
+            if not G.has_node(term):
+                G.add_node(term, type="concept", keywords=get_keywords(term))
+                concept_nodes.append(term)
             
+            # Paper -> Concept (Strongest link, weight 5)
+            G.add_edge(sheet_name, term, weight=5)
+
     if len(paper_nodes) == 0:
         logging.warning("No papers found to graph.")
         return
+
+    # 2. Fuzzy Connectivity (Concept <-> Concept)
+    # Link concepts that share keywords
+    import itertools
+    
+    # Limit combinations if too many nodes to prevent N^2 explosion?
+    # For < 500 nodes, N^2 is fine.
+    
+    for term_a, term_b in itertools.combinations(concept_nodes, 2):
+        kw_a = G.nodes[term_a].get("keywords", set())
+        kw_b = G.nodes[term_b].get("keywords", set())
+        
+        # Intersection
+        common = kw_a & kw_b
+        weight = len(common)
+        
+        if weight > 0:
+            # Create edge with weight
+            G.add_edge(term_a, term_b, weight=weight)
+
 
     # --- Visualization ---
     
@@ -185,8 +235,14 @@ def update_workbook_with_graph(wb):
     # Draw Nodes
     nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color=node_colors, alpha=0.9, ax=ax)
     
-    # Draw Edges
-    nx.draw_networkx_edges(G, pos, width=1.0, edge_color=EDGE_COLOR, alpha=0.6, ax=ax)
+    # Draw Edges with thickness based on weight
+    edges = G.edges()
+    weights = [G[u][v].get('weight', 1) for u, v in edges]
+    
+    # Scale weights for visual thickness (e.g. 1 -> 0.5, 5 -> 2.5)
+    widths = [w * 0.5 for w in weights]
+    
+    nx.draw_networkx_edges(G, pos, edgelist=edges, width=widths, edge_color=EDGE_COLOR, alpha=0.6, ax=ax)
     
     # Draw Labels with improved font size
     nx.draw_networkx_labels(G, pos, font_size=9, font_color=TEXT_COLOR, font_family="sans-serif", ax=ax)
