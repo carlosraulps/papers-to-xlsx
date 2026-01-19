@@ -251,14 +251,15 @@ def main():
             # Write to Excel (Sheet addition)
             add_paper_to_workbook(wb, data)
             
-            # Save Progress (Incremental)
+            # Save Progress (Incremental - Atomic)
             save_workbook(wb, excel_file_path)
             
-            processed_log[pdf_file] = "Processed"
+            # Update and Save Log immediately
+            processed_log[pdf_file] = "Processed" 
             save_processed_log(processed_log, log_file_path)
             
             processed_count += 1
-            logging.info(f"Success: {pdf_file}")
+            logging.info(f"Success: {pdf_file} (Log Updated)")
 
         except Exception as e:
             logging.error(f"Error processing {pdf_file}: {e}")
