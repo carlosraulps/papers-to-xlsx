@@ -316,18 +316,99 @@ def main():
             except Exception as e:
                 logging.error(f"Could not sanitize {filename}: {e}")
     
-    # --- PDF Verification & Deduplication Step ---
-    # Replaces simple os.listdir
-    logging.info("Running PDF Verification and Deduplication...")
-    all_pdf_files = verify_pdfs.scan_and_deduplicate(input_folder)
+    # --- Strict Binary Deduplication (Pre-Flight) ---
+    logging.info("Running Strict Binary Deduplication...")
+    # This ensures duplicates are moved BEFORE we even look at the log or start processing
+    # Using verify_pdfs.scan_and_deduplicate which we already improved?
+    # Actually, the user asked for a specific "deduplicate_files" function or logic that runs *before* loop.
+    # We can use the existing 'scan_and_deduplicate' from verify_pdfs as it does exactly this:
+    # "Scans directory, moves duplicates [based on MD5], and returns list of valid files."
     
+    # Reload processed hashes to ensure we respect history? 
+    # Actually, scan_and_deduplicate in verify_pdfs currently builds a local hash map of the *current* folder.
+    # It doesn't know about historically processed files if they are not in the folder.
+    # But that's fine for "current folder hygiene". 
+    # For "Check Registry (True Duplicate)", we need to check against 'processed_hashes.json'.
+    
+    # Let's enhance the pre-flight check to also check against the historical registry.
+    
+    # Load Registry
+    hashes_file_path = os.path.join(output_dir, "processed_hashes.json")
+    if os.path.exists(hashes_file_path):
+        with open(hashes_file_path, 'r') as f:
+            processed_hashes = json.load(f)
+    else:
+        processed_hashes = {}
+
+    all_pdf_files = []
+    
+    duplicates_dir = os.path.join(input_folder, "duplicates")
+    if not os.path.exists(duplicates_dir):
+        os.makedirs(duplicates_dir)
+
+    # 1. Internal Deduplication (files in folder against each other)
+    # 2. Historical Deduplication (files in folder against history)
+    
+    seen_hashes_current_run = {}
+    
+    raw_files = [f for f in os.listdir(input_folder) if f.lower().endswith('.pdf')]
+    logging.info(f"Scanning {len(raw_files)} files for binary duplicates...")
+    
+    for filename in raw_files:
+        filepath = os.path.join(input_folder, filename)
+        try:
+            # MD5 Hash
+            file_hash = verify_pdfs.calculate_md5(filepath)
+            
+            is_duplicate = False
+            match_name = ""
+            
+            # Check History
+            if file_hash in processed_hashes:
+                 is_duplicate = True
+                 match_name = processed_hashes[file_hash]
+                 # Wait, if match_name is the SAME file (just processed before), we shouldn't move it!
+                 # We only move if it's a *different* filename but same content.
+                 # OR if it's the exact same filename, it means it's already analyzed.
+                 if match_name == filename:
+                     # Same file, already processed. Keep it (it will be skipped by log check later).
+                     is_duplicate = False
+                 else:
+                     # Different filename, same content. True duplicate.
+                     logging.warning(f"Duplicate content found (Historic): {filename} == {match_name}")
+            
+            # Check Current Run (Collision within batch)
+            if file_hash in seen_hashes_current_run:
+                is_duplicate = True
+                match_name = seen_hashes_current_run[file_hash]
+                logging.warning(f"Duplicate content found (Current Batch): {filename} == {match_name}")
+            
+            if is_duplicate:
+                # Move to duplicates
+                try:
+                    shutil.move(filepath, os.path.join(duplicates_dir, filename))
+                    logging.info(f" moved to {duplicates_dir}")
+                except Exception as e:
+                    logging.error(f"Failed to move duplicate {filename}: {e}")
+            else:
+                # Keep it
+                seen_hashes_current_run[file_hash] = filename
+                # If it's new to history, add it to history map? 
+                # No, only add to history AFTER successful processing.
+                all_pdf_files.append(filename)
+                
+        except Exception as e:
+            logging.error(f"Error checking hash for {filename}: {e}")
+            # Keep file if check fails? Or skip? Skip to be safe.
+            pass
+
+    # Update valid list
     if not all_pdf_files:
-        logging.warning(f"No valid PDF files found in {input_folder} (others may be duplicates or corrupt)")
-        # Even if no PDFs, we might want to save the empty workbook or just exit
+        logging.warning("No valid unique PDFs found.")
         if processed_log:
              pass
         sys.exit(0)
-
+        
     # --- Incremental Processing Filter ---
     # Filter out files that are already in the log
     pdf_files = [f for f in all_pdf_files if f not in processed_log and processed_log.get(f) != "Failed"]
@@ -336,48 +417,22 @@ def main():
     if skipped_count > 0:
         logging.info(f"Skipping {skipped_count} already processed files.")
 
-    # Load Processed Hashes
-    hashes_file_path = os.path.join(output_dir, "processed_hashes.json")
-    if os.path.exists(hashes_file_path):
-        with open(hashes_file_path, 'r') as f:
-            processed_hashes = json.load(f)
-    else:
-        processed_hashes = {}
-
-    logging.info(f"Scanning {len(pdf_files)} new valid PDF files in {input_folder}...")
+    logging.info(f"Queueing {len(pdf_files)} new valid PDF files for analysis...")
     
     processed_count = 0
 
     for pdf_file in pdf_files:
         pdf_path = os.path.join(input_folder, pdf_file)
         
-        # --- Content-Based Deduplication (MD5) ---
-        try:
-            # 1. Calculate Hash
-            file_hash = verify_pdfs.calculate_md5(pdf_path)
-            
-            # 2. Check Registry (True Duplicate)
-            if file_hash in processed_hashes:
-                existing_file = processed_hashes[file_hash]
-                logging.warning(f"Skipping {pdf_file}: Content matches {existing_file} (True Duplicate)")
-                
-                # Move to duplicates
-                duplicates_dir = os.path.join(input_folder, "duplicates")
-                if not os.path.exists(duplicates_dir):
-                    os.makedirs(duplicates_dir)
-                    
-                try:
-                    import shutil
-                    shutil.move(pdf_path, os.path.join(duplicates_dir, pdf_file))
-                    logging.info(f"Moved duplicate to {duplicates_dir}")
-                except Exception as e:
-                    logging.error(f"Failed to move duplicate: {e}")
-                
-                continue
-                
-        except Exception as e:
-             logging.error(f"Error calculating hash for {pdf_file}: {e}")
-             continue
+        # Hash already calculated but not stored per file variable. 
+        # Recalculate for registry update or store in map above?
+        # Let's recalculate, it's fast.
+        file_hash = verify_pdfs.calculate_md5(pdf_path)
+
+        # Check Memory - Strict Check (Double check by name still useful)
+        if pdf_file in processed_log:
+            logging.info(f"Skipping {pdf_file} - Already analyzed")
+            continue
         
         # Check Memory - Strict Check (Double check by name still useful)
         if pdf_file in processed_log:
@@ -391,43 +446,53 @@ def main():
             logging.info(f"Processing: {pdf_file}")
             data = analyze_pdf(pdf_path, model_name=model_name)
             
-            # B. Analyze & Rename Logic (Decoupled)
-            # We don't want to rely on side-effects inside reference_manager.process potentially crashing
-            # But ref_manager does citations AND renaming. 
-            # Let's let it handle it, but we've improved it to be robust (collisions -> _v2).
-            
-            logging.info(f"Verifying citations and renaming: {pdf_file}")
-            data = reference_manager.process(data, output_dir, model_name=model_name, pdf_path=pdf_path)
-            
-            # C. Update State if Renamed
-            if 'pdf_renamed' in data:
-                 # Logic for "Collision (Same author/year, different paper)" is handled by reference_manager's _v2 logic
-                 new_name = data['pdf_renamed']
-                 # Verify it actually exists
-                 new_full_path = os.path.join(input_folder, new_name)
-                 
-                 if os.path.exists(new_full_path):
-                     pdf_path = new_full_path
-                     pdf_file = new_name 
-                     logging.info(f"State updated: Current file is now {pdf_file}")
-                 else:
-                     logging.error(f"Rename reported success but file missing: {new_full_path}")
-
-            # D. Write to Excel
+            # B. Write to Excel (The Core Job)
             add_paper_to_workbook(wb, data)
             save_workbook(wb, excel_file_path)
             
-            # E. Atomic Log Update
+            # C. ATOMIC SUCCESS: Mark as Processed immediately
+            # If we crash after this, at least data is saved.
             processed_log[pdf_file] = "Processed" 
             save_processed_log(processed_log, log_file_path)
             
-            # F. Update Hash Registry
+            # Update Hash Registry
             processed_hashes[file_hash] = pdf_file
             with open(hashes_file_path, 'w') as f:
                 json.dump(processed_hashes, f, indent=4)
             
             processed_count += 1
             logging.info(f"Success: {pdf_file} (Log & Hash Updated)")
+
+            # D. Renaming & Citations (The "Nice to Have" Step)
+            # This is risky due to I/O and file locks.
+            # If it fails, we keep the processed status but warn the user.
+            try:
+                logging.info(f"Verifying citations and renaming: {pdf_file}")
+                # Note: ref_manager process also does citations.
+                data = reference_manager.process(data, output_dir, model_name=model_name, pdf_path=pdf_path)
+                
+                if 'pdf_renamed' in data:
+                     new_name = data['pdf_renamed']
+                     new_full_path = os.path.join(input_folder, new_name)
+                     
+                     if os.path.exists(new_full_path):
+                         # File moved successfully. Update Log to point to new name.
+                         del processed_log[pdf_file]
+                         processed_log[new_name] = "Processed"
+                         save_processed_log(processed_log, log_file_path)
+                         
+                         # Update Hash Registry to point to new name too
+                         processed_hashes[file_hash] = new_name
+                         with open(hashes_file_path, 'w') as f:
+                             json.dump(processed_hashes, f, indent=4)
+                             
+                         logging.info(f"State updated: {pdf_file} -> {new_name}")
+            except (OSError, ValueError) as rename_error:
+                # Catch "I/O operation on closed file" or file permissions
+                logging.warning(f"Renaming/Citation Warning for {pdf_file}: {rename_error}")
+                logging.warning("Data was saved to Excel, so marking as processed despite rename failure.")
+                with open(error_log_path, 'a') as ef:
+                    ef.write(f"{pdf_file} (Rename Warning): {str(rename_error)}\n")
             
         except Exception as e:
             logging.error(f"Error processing {pdf_file}: {e}")
