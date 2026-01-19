@@ -24,9 +24,19 @@ def analyze_pdf(pdf_path, model_name="gemini-2.5-flash"):
 
         logging.info(f"Uploading file: {pdf_path}")
         # Use context manager to ensure file is closed immediately after upload
-        # Rely on mimetypes.add_type in main.py for detection. Do NOT pass mime_type arg (unsupported in some SDKs).
         with open(pdf_path, 'rb') as f:
-            file_ref = client.files.upload(file=f)
+            try:
+                # Explicitly set mime_type as requested by the SDK error message
+                file_ref = client.files.upload(file=f, mime_type='application/pdf')
+            except TypeError:
+                # Handle potential "unexpected keyword argument" if SDK differs
+                logging.warning("mime_type argument failed, trying config approach...")
+                try:
+                     # Try config object approach for newer/different SDK versions
+                     file_ref = client.files.upload(file=f, config={'mime_type': 'application/pdf'})
+                except Exception:
+                     # Fallback to no argument (relying on detection or failure)
+                     file_ref = client.files.upload(file=f)
         
         # Verify upload (Active state check)
         # New SDK might handle this differently, but let's check state if available
