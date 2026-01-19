@@ -13,6 +13,14 @@ def calculate_file_hash(filepath):
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
+def calculate_md5(filepath):
+    """Calculates MD5 hash of a file."""
+    md5_hash = hashlib.md5()
+    with open(filepath, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            md5_hash.update(byte_block)
+    return md5_hash.hexdigest()
+
 def verify_pdf_integrity(filepath):
     """
     Checks if PDF is readable and contains text.
@@ -73,7 +81,7 @@ def scan_and_deduplicate(db_dir, duplicates_dir_name="duplicates"):
             continue
 
         # 2. Hash & Deduplicate
-        file_hash = calculate_file_hash(filepath)
+        file_hash = calculate_md5(filepath)
         
         if file_hash in seen_hashes:
             original_file = seen_hashes[file_hash]

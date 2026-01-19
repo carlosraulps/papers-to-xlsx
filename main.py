@@ -168,7 +168,7 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
         logging.info(f"Created output directory: {output_dir}")
 
-    # Load Memory
+    # Load Memor
     processed_log = load_processed_log(log_file_path)
     
     # --- Sync Step: Recover from Crash ---
@@ -279,74 +279,103 @@ def main():
     if skipped_count > 0:
         logging.info(f"Skipping {skipped_count} already processed files.")
 
+    # Load Processed Hashes
+    hashes_file_path = os.path.join(output_dir, "processed_hashes.json")
+    if os.path.exists(hashes_file_path):
+        with open(hashes_file_path, 'r') as f:
+            processed_hashes = json.load(f)
+    else:
+        processed_hashes = {}
+
     logging.info(f"Scanning {len(pdf_files)} new valid PDF files in {input_folder}...")
     
     processed_count = 0
 
     for pdf_file in pdf_files:
-        # Check Memory - Strict Check (Double check)
+        pdf_path = os.path.join(input_folder, pdf_file)
+        
+        # --- Content-Based Deduplication (MD5) ---
+        try:
+            # 1. Calculate Hash
+            file_hash = verify_pdfs.calculate_md5(pdf_path)
+            
+            # 2. Check Registry (True Duplicate)
+            if file_hash in processed_hashes:
+                existing_file = processed_hashes[file_hash]
+                logging.warning(f"Skipping {pdf_file}: Content matches {existing_file} (True Duplicate)")
+                
+                # Move to duplicates
+                duplicates_dir = os.path.join(input_folder, "duplicates")
+                if not os.path.exists(duplicates_dir):
+                    os.makedirs(duplicates_dir)
+                    
+                try:
+                    import shutil
+                    shutil.move(pdf_path, os.path.join(duplicates_dir, pdf_file))
+                    logging.info(f"Moved duplicate to {duplicates_dir}")
+                except Exception as e:
+                    logging.error(f"Failed to move duplicate: {e}")
+                
+                continue
+                
+        except Exception as e:
+             logging.error(f"Error calculating hash for {pdf_file}: {e}")
+             continue
+        
+        # Check Memory - Strict Check (Double check by name still useful)
         if pdf_file in processed_log:
             logging.info(f"Skipping {pdf_file} - Already analyzed")
             continue
 
-        pdf_path = os.path.join(input_folder, pdf_file)
-        
         try:
-            # Check if Sheet exists (Zombie Check)
-            # Heuristic: Match filename stem against sheet names.
-            # Filenames: Author_Year_Title.pdf (underscores)
-            # Sheet names: Author_Year_Title (max 31 chars)
+             # --- 3. Decoupled Processing Loop ---
             
-            file_stem = os.path.splitext(pdf_file)[0]
-            # Normalize stem to match sheet logic (first 31 chars)
-            likely_sheet_name = file_stem[:31]
-            
-            # Check for near matches in existing sheets
-            # We check if likely_sheet_name is a prefix of any existing sheet
-            # or if any existing sheet is a prefix of likely_sheet_name
-            sheet_exists = False
-            for sheet in existing_sheets:
-                if sheet == likely_sheet_name or sheet.startswith(likely_sheet_name) or likely_sheet_name.startswith(sheet):
-                     # Double check year/author alignment to avoid false positives?
-                     # If the sheet name is "Wojcik_2012_...", and file is "Wojcik_2012_Collision...", match is highly likely.
-                     sheet_exists = True
-                     break
-            
-            if sheet_exists:
-                 logging.info(f"Skipping {pdf_file} - Sheet already exists in Excel (Zombie Recovery)")
-                 # Update log so we don't check again
-                 processed_log[pdf_file] = "Processed (Recovered from Excel)"
-                 save_processed_log(processed_log, log_file_path)
-                 continue
-            
-            # Analyze
+            # A. Upload & Analyze
             logging.info(f"Processing: {pdf_file}")
             data = analyze_pdf(pdf_path, model_name=model_name)
             
-            # Post-Process: Citation Manager (Enrichment) & Renaming
+            # B. Analyze & Rename Logic (Decoupled)
+            # We don't want to rely on side-effects inside reference_manager.process potentially crashing
+            # But ref_manager does citations AND renaming. 
+            # Let's let it handle it, but we've improved it to be robust (collisions -> _v2).
+            
             logging.info(f"Verifying citations and renaming: {pdf_file}")
-            # Pass output_dir and pdf_path to reference manager for potential renaming
             data = reference_manager.process(data, output_dir, model_name=model_name, pdf_path=pdf_path)
             
-            # FIX: Update state if renamed
+            # C. Update State if Renamed
             if 'pdf_renamed' in data:
+                 # Logic for "Collision (Same author/year, different paper)" is handled by reference_manager's _v2 logic
                  new_name = data['pdf_renamed']
-                 pdf_path = os.path.join(input_folder, new_name)
-                 pdf_file = new_name # Update loop variable for logging
-                 logging.info(f"State updated: Current file is now {pdf_file}")
-            
-            # Write to Excel (Sheet addition)
+                 # Verify it actually exists
+                 new_full_path = os.path.join(input_folder, new_name)
+                 
+                 if os.path.exists(new_full_path):
+                     pdf_path = new_full_path
+                     pdf_file = new_name 
+                     logging.info(f"State updated: Current file is now {pdf_file}")
+                 else:
+                     logging.error(f"Rename reported success but file missing: {new_full_path}")
+
+            # D. Write to Excel
             add_paper_to_workbook(wb, data)
-            
-            # Save Progress (Incremental - Atomic)
             save_workbook(wb, excel_file_path)
             
-            # Update and Save Log immediately
+            # E. Atomic Log Update
             processed_log[pdf_file] = "Processed" 
             save_processed_log(processed_log, log_file_path)
             
+            # F. Update Hash Registry
+            processed_hashes[file_hash] = pdf_file
+            with open(hashes_file_path, 'w') as f:
+                json.dump(processed_hashes, f, indent=4)
+            
             processed_count += 1
-            logging.info(f"Success: {pdf_file} (Log Updated)")
+            logging.info(f"Success: {pdf_file} (Log & Hash Updated)")
+            
+        except Exception as e:
+            logging.error(f"Error processing {pdf_file}: {e}")
+            with open(error_log_path, 'a') as ef:
+                ef.write(f"{pdf_file}: {str(e)}\n")
 
         except Exception as e:
             logging.error(f"Error processing {pdf_file}: {e}")

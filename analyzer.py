@@ -60,7 +60,7 @@ def analyze_pdf(pdf_path, model_name="gemini-2.5-flash"):
 
         The JSON structure must be keys corresponding to the specific questions below:
 
-        1.  **Title**: The full title of the paper.
+        1.  **Title**: The full title of the paper. Extract the title EXACTLY as it appears on the first page of the PDF. Do NOT update the title based on external search results unless the PDF title is missing. If it is a preprint, keep the preprint title.
         2.  **Authors**: List of authors.
         3.  **Journal**: Name of the journal/conference.
         4.  **Volume**: Volume info if available (or "N/A").

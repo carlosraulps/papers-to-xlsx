@@ -237,8 +237,14 @@ def process(paper_data, output_dir, model_name="gemini-2.5-flash", pdf_path=None
             # Sanitize
             first_author = "".join(x for x in first_author if x.isalnum())
             year = "".join(x for x in year if x.isalnum())[:4]
-            title = "".join(x for x in title if x.isalnum() or x in " -_")
-            title = title[:150] # Limit length
+            
+            # Limit title to first 6 words to avoid overly long names and collisions based on minor differences
+            # Split by space, take 6, join
+            title_words = title.split()
+            title_short = " ".join(title_words[:6])
+            
+            title = "".join(x for x in title_short if x.isalnum() or x in " -_")
+            title = title[:150] # Hard limit length still applies
             
             new_filename = f"{first_author}-{year}-{title}.pdf"
             # Cleanup multiple spaces
