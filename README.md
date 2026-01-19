@@ -1,24 +1,28 @@
-# Scientific Paper Analysis Tool
+# Scientific Paper Analysis Tool (Gemini-Powered)
 
-Automate the extraction of structured data from scientific PDFs using Google's **Gemini 2.5 Flash**. This tool transforms a folder of research papers into a comprehensive, interlinked Excel database, complete with a knowledge graph and citation manager.
+Automate the extraction of structured data from scientific PDFs using Google's **Gemini 2.5 Flash**. This tool transforms a chaotic folder of research papers into a structured, publication-quality Excel database, complete with an interactive Knowledge Graph and automated Citation Management.
 
-## 🚀 Features
+## 🚀 Key Features
 
--   **AI-Powered Deep Analysis**: Uses Gemini 2.5 Flash to extract complex scientific details including:
-    -   Central Hypothesis, Objectives, and Variables (Independent/Dependent).
+-   **AI-Powered Deep Analysis**: Extracts complex scientific metadata including:
+    -   Central Problem, Hypothesis, and Objectives.
+    -   Independent/Dependent Variables (X/Y).
     -   Methodology & Tools.
     -   Key Results and Conclusions.
     -   **Short Summaries** and **Glossaries** of technical terms.
--   **Knowledge Graph Visualization**: Automatically builds and embeds a network graph (using NetworkX) linking papers to key concepts, visualizing the connections within your research library.
--   **Smart Excel Dashboard**: Generates a polished Excel workbook (`Paper_Analysis_Results.xlsx`) containing:
-    -   **Dashboard**: A clickable Table of Contents with high-level summaries.
-    -   **Knowledge Graph**: Visual representation of the research landscape.
-    -   **Individual Sheets**: Detailed, structured analysis for every paper.
--   **Citation Manager & Grounding**:
-    -   Extracts metadata and verifies it against **Google Search** to ensure accuracy (fixing missing DOIs, Volumes, etc.).
-    -   Exports citations to `.bib` (BibTeX), APA, and APS formats in the `citations/` folder.
--   **Automatic Organization**: Renames PDF files to a standardized `Author_Year_Title.pdf` format for easy filesystem navigation.
--   **Incremental Processing**: Uses a `processed_log.json` to track analyzed files, allowing you to add new papers to the folder and run the script to process *only* the new additions.
+-   **Pub-Quality Knowledge Graph**: 
+    -   Builds a dynamic NetworkX graph linking papers to technical concepts.
+    -   Uses **adjustText** physics simulation to prevent label overlap.
+    -   Auto-embedded into the Excel workbook with customizable Obsidian-style dark aesthetics.
+-   **Smart Excel Dashboard**:
+    -   **Dashboard**: Clickable Table of Contents with summaries and glossary previews.
+    -   **Individual Sheets**: Dedicated pages for each paper with structured data.
+    -   **Strict Deduplication**: Automatically updates existing sheets instead of creating duplicates.
+-   **Robust File Management**:
+    -   **Content-Based Deduplication**: Uses MD5 hashing to move identical PDFs to a `duplicates/` folder, even if filenames differ.
+    -   **Automated Renaming**: Standardizes files to `Author-Year-ShortTitle.pdf`.
+    -   **Safe Grounding**: Uses Google Search to verify citations (DOI, Journal, etc.) without losing the original paper's identity.
+    -   **Garbage Collection**: Automatically removes "Zombie" log entries if files are deleted from the disk.
 
 ## 📋 Prerequisites
 
@@ -29,8 +33,8 @@ Automate the extraction of structured data from scientific PDFs using Google's *
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/yourusername/art-to-xlsx.git
-    cd art-to-xlsx
+    git clone https://github.com/yourusername/papers-to-xlsx.git
+    cd papers-to-xlsx
     ```
 
 2.  **Create and activate a virtual environment:**
@@ -45,50 +49,53 @@ Automate the extraction of structured data from scientific PDFs using Google's *
     ```
 
 4.  **Configuration:**
-    Create a `.env` file in the project root and add your API key:
+    Create a `.env` file in the project root:
     ```env
     GOOGLE_API_KEY=your_actual_api_key_here
     ```
 
 ## 💻 Usage
 
-Run the main script by providing the path to the folder containing your PDF files:
+Run the tool by providing the path to your PDF folder:
 
 ```bash
-python main.py /path/to/your/pdf_folder
+python3 main.py /path/to/your/pdf_folder
 ```
 
-### Example
+### Advanced: Resetting State
+If you want to perform a fresh rebuild without re-downloading PDFs, use the cleanup tool:
 ```bash
-python main.py ./downloads/new_papers
+python3 clean_state.py /path/to/your/pdf_folder
 ```
 
-The script will:
-1.  Scan the folder for `.pdf` files.
-2.  Skip files that have already been processed (checked against `processed_log.json`).
-3.  Analyze new papers using Gemini.
-4.  Verify citations with Google Search.
-5.  Update the Excel dashboard and Knowledge Graph.
-6.  Rename the original PDF files.
+## 📂 Project Structure
 
-## 📂 Output Structure
+-   **`main.py`**: Orchestrator for the entire pipeline.
+-   **`analyzer.py`**: Gemini API interface (File uploads, prompts, and JSON parsing).
+-   **`excel_writer.py`**: Handles all Excel logic (Formatting, Dashboard, Sheet Deduplication).
+-   **`graph_builder.py`**: Generates the Knowledge Graph using NetworkX and Matplotlib.
+-   **`reference_manager.py`**: Manages citations, Google Search Grounding, and PDF renaming.
+-   **`verify_pdfs.py`**: Validates PDF integrity and handles MD5-based deduplication.
+-   **`clean_state.py`**: Utility to wipe logs and Excel for a clean re-run.
 
-After execution, your directory will be organized as follows:
+## 📊 Output Organization
+
+The script creates an `outputs/` folder inside your target directory:
 
 ```text
-/
-├── citations/                  # Exported references
-│   ├── library.bib
-│   ├── references_apa.txt
-│   └── references_aps.txt
-├── papers_analysis_output/     
-│   ├── Paper_Analysis_Results.xlsx  # The main Excel database
-│   └── error_log.txt                # Log of any failed files
-└── [Your Source Folder]/
-    ├── Smith_2023_Study_on_AI.pdf   # Renamed PDFs
-    └── ...
+Target-Folder/
+├── outputs/
+│   ├── Paper_Analysis_Results.xlsx  # The main Database
+│   ├── processed_log.json           # Progress tracker
+│   ├── processed_hashes.json        # Duplicate prevention registry
+│   ├── error_log.txt                # Log of any failed attempts
+│   └── citations/                   # BibTeX, APA, and APS exports
+├── duplicates/                      # Identical files moved here
+└── [Renamed-Papers].pdf             # Cleanly organized PDF files
 ```
 
-## 📄 License
-
-[MIT](LICENSE)
+## 🛡️ Synchronization Details
+The tool includes several "Self-Healing" features:
+-   **Zombies**: If you delete a PDF manually, the next run will remove it from the analysis log.
+-   **Safe Grounding**: Internet searches will fill in missing DOIs but are restricted from changing the paper's title to prevent hallucinated renaming loops.
+-   **Unicode Safety**: Handles accents (e.g., Wójcik) robustly across different operating systems.

@@ -272,10 +272,9 @@ def process(paper_data, output_dir, model_name="gemini-2.5-flash", pdf_path=None
             # Handle Collisions (Robust Renaming)
             # If target exists and it's NOT the current file
             counter = 2
+            original_base, ext = os.path.splitext(new_filename)
             while os.path.exists(new_path) and new_path != pdf_path:
-                 name_part, ext = os.path.splitext(new_filename)
-                 # Check if name_part already has a version suffix? Simpler just to append.
-                 new_filename = f"{name_part}_v{counter}{ext}"
+                 new_filename = f"{original_base}_v{counter}{ext}"
                  new_path = os.path.join(os.path.dirname(pdf_path), new_filename)
                  counter += 1
             

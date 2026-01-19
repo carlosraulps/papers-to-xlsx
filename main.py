@@ -300,6 +300,16 @@ def main():
         if new_name != filename:
             old_p = os.path.join(input_folder, filename)
             new_p = os.path.join(input_folder, new_name)
+            
+            # COLLISION PROTECTION: Don't overwrite existing files during sanitization
+            if os.path.exists(new_p):
+                base, ext = os.path.splitext(new_name)
+                counter = 1
+                while os.path.exists(new_p):
+                    new_p = os.path.join(input_folder, f"{base}_{counter}{ext}")
+                    counter += 1
+                new_name = os.path.basename(new_p)
+
             try:
                 os.rename(old_p, new_p)
                 logging.info(f"Sanitized: {filename} -> {new_name}")
