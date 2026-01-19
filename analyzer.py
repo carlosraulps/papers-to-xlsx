@@ -81,7 +81,7 @@ def analyze_pdf(pdf_path):
             logging.info(f"Analysis attempt {attempt + 1}")
             try:
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-3-flash',
                     contents=[file_ref, prompt],
                     config=config
                 )
