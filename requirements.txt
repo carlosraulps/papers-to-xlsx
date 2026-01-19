@@ -5,3 +5,4 @@ python-dotenv
 networkx
 matplotlib
 scipy
+pypdf
