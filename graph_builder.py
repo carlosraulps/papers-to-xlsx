@@ -240,6 +240,7 @@ def update_workbook_with_graph(wb):
                            width=widths, 
                            edge_color=EDGE_COLOR, 
                            alpha=0.6, 
+                           arrows=True, # Required for connectionstyle
                            connectionstyle="arc3,rad=0.1", 
                            ax=ax)
     
