@@ -185,7 +185,7 @@ def export_aps(db, output_dir):
             entry = f"{authors}, {journal} {volume}, {pages} ({year})."
             f.write(entry + "\n")
 
-def process(paper_data, output_dir, model_name="gemini-2.5-flash"):
+def process(paper_data, output_dir, model_name="gemini-2.5-flash", pdf_path=None):
     """Main processing function for references."""
     # 1. Extract Metadata specific for citations
     metadata = {k: paper_data.get(k, "N/A") for k in ["Title", "Authors", "Journal", "Volume", "Pages", "Year", "DOI"]}
@@ -222,4 +222,36 @@ def process(paper_data, output_dir, model_name="gemini-2.5-flash"):
     export_apa(db, output_dir)
     export_aps(db, output_dir)
     
-    return paper_data # Return potentially updated data
+    # 6. Rename PDF
+    if pdf_path and os.path.exists(pdf_path):
+        try:
+            authors = paper_data.get("Authors", "Unknown")
+            if isinstance(authors, list):
+                 first_author = authors[0].split()[-1] if authors else "Unknown"
+            else:
+                 first_author = authors.split(',')[0].split()[-1] if ',' in authors else authors.split()[-1]
+            
+            year = str(paper_data.get("Year", "0000"))
+            title = paper_data.get("Title", "Untitled")
+            
+            # Sanitize
+            first_author = "".join(x for x in first_author if x.isalnum())
+            year = "".join(x for x in year if x.isalnum())[:4]
+            title = "".join(x for x in title if x.isalnum() or x in " -_")
+            title = title[:150] # Limit length
+            
+            new_filename = f"{first_author}-{year}-{title}.pdf"
+            # Cleanup multiple spaces
+            new_filename = " ".join(new_filename.split())
+            new_filename = new_filename.replace(" ", "_")
+            
+            new_path = os.path.join(os.path.dirname(pdf_path), new_filename)
+            
+            if new_path != pdf_path:
+                os.rename(pdf_path, new_path)
+                logging.info(f"Renamed PDF to: {new_filename}")
+                paper_data['pdf_renamed'] = new_filename # Track change
+        except Exception as e:
+            logging.error(f"Failed to rename PDF: {e}")
+
+    return paper_data

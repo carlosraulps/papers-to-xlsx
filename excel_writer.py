@@ -124,45 +124,59 @@ def add_paper_to_workbook(wb, paper_data):
     for key in keys_order:
         val = paper_data.get(key, "N/A")
         
-        # Special formatting for Glossary
+        # Consistent Glossary Formatting
         if key == "Glossary":
             import ast
-            # If it's a list, format it
-            if isinstance(val, list):
-                formatted_glossary = []
-                for item in val:
-                    if isinstance(item, dict):
-                        term = item.get("Term", item.get("term", ""))
-                        defn = item.get("Definition", item.get("definition", ""))
-                        if term:
-                            formatted_glossary.append(f"{term}: {defn}")
-                if formatted_glossary:
-                    val = "\n\n".join(formatted_glossary)
-                else:
-                    val = str(val)
-            # If it's a string looking like a list (from JSON load edge case), try to parse
-            elif isinstance(val, str) and val.strip().startswith("["):
-                try:
+            formatted_glossary = []
+            
+            # Helper to extract Term/Def
+            def extract_term_def(item):
+                if isinstance(item, dict):
+                     t = item.get("Term", item.get("term", ""))
+                     d = item.get("Definition", item.get("definition", ""))
+                     return t, d
+                return None, None
+
+            try:
+                # Case 1: List of dicts
+                if isinstance(val, list):
+                    for item in val:
+                        t, d = extract_term_def(item)
+                        if t:
+                            formatted_glossary.append(f"• {t}: {d}")
+                        else:
+                            # fallback if just string list?
+                            if isinstance(item, str):
+                                formatted_glossary.append(f"• {item}")
+
+                # Case 2: String representation of list
+                elif isinstance(val, str) and val.strip().startswith("["):
                     glossary_list = ast.literal_eval(val)
                     if isinstance(glossary_list, list):
-                        formatted_glossary = []
                         for item in glossary_list:
-                            if isinstance(item, dict):
-                                term = item.get("Term", item.get("term", ""))
-                                defn = item.get("Definition", item.get("definition", ""))
-                                if term:
-                                    formatted_glossary.append(f"{term}: {defn}")
-                        if formatted_glossary:
-                            val = "\n\n".join(formatted_glossary)
-                except:
-                    pass
+                             t, d = extract_term_def(item)
+                             if t:
+                                 formatted_glossary.append(f"• {t}: {d}")
+                
+                # Case 3: Already formatted string or other string
+                elif isinstance(val, str):
+                    formatted_glossary.append(val)
+                    
+            except Exception as e:
+                # If parsing fails, just dump str
+                formatted_glossary.append(str(val))
+            
+            if formatted_glossary:
+                val = "\n".join(formatted_glossary)
+            else:
+                val = "N/A"
         
         elif isinstance(val, list):
             val = ", ".join(str(v) for v in val)
         else:
             val = str(val)
             
-        ws.cell(row=row_idx, column=1, value=key)
+        ws.cell(row=row_idx, column=1, value=key).font = openpyxl.styles.Font(bold=True)
         ws.cell(row=row_idx, column=2, value=val)
         row_idx += 1
         
@@ -170,9 +184,17 @@ def add_paper_to_workbook(wb, paper_data):
     ws.column_dimensions['A'].width = 30
     ws.column_dimensions['B'].width = 100
     
+    # Global Alignment & Wrapping
     for row in ws.iter_rows(min_row=1, max_row=row_idx-1, min_col=1, max_col=2):
         for cell in row:
-            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            # Top-left alignment for readability, especially for long text
+            cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+            
+    # Center align headers
+    ws['A1'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, shrink_to_fit=False)
+    ws['B1'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True, shrink_to_fit=False)
+    ws['A1'].font = openpyxl.styles.Font(bold=True, size=12)
+    ws['B1'].font = openpyxl.styles.Font(bold=True, size=12)
 
 def sort_sheets_alphabetically(wb):
     """Sorts all sheets in the workbook alphabetically, EXCEPT special sheets."""

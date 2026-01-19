@@ -135,6 +135,8 @@ def select_model():
         print(f"Defaulting to {fallback}")
         return fallback
 
+import verify_pdfs
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze PDF scientific papers using Gemini 2.5 Flash.")
     parser.add_argument("folder", help="Path to the folder containing PDF files")
@@ -167,19 +169,19 @@ def main():
     # Initialize Excel Workbook (Load existing or create new)
     wb = load_or_create_workbook(excel_file_path)
     
-    # Find PDFs (recursively? No, usually flat, let's keep it flat)
-    pdf_files = [f for f in os.listdir(input_folder) if f.lower().endswith('.pdf')]
+    # --- PDF Verification & Deduplication Step ---
+    # Replaces simple os.listdir
+    logging.info("Running PDF Verification and Deduplication...")
+    pdf_files = verify_pdfs.scan_and_deduplicate(input_folder)
     
     if not pdf_files:
-        logging.warning(f"No PDF files found in {input_folder}")
+        logging.warning(f"No valid PDF files found in {input_folder} (others may be duplicates or corrupt)")
         # Even if no PDFs, we might want to save the empty workbook or just exit
         if processed_log:
-             # If we have history but no current files (maybe they were moved?), 
-             # just exiting is fine.
              pass
         sys.exit(0)
 
-    logging.info(f"Scanning {len(pdf_files)} PDF files in {input_folder}...")
+    logging.info(f"Scanning {len(pdf_files)} valid PDF files in {input_folder}...")
     
     processed_count = 0
 
@@ -196,10 +198,10 @@ def main():
             logging.info(f"Processing: {pdf_file}")
             data = analyze_pdf(pdf_path, model_name=model_name)
             
-            # Post-Process: Citation Manager (Enrichment)
-            logging.info(f"Verifying citations for: {pdf_file}")
-            # Pass output_dir to reference manager
-            data = reference_manager.process(data, output_dir, model_name=model_name)
+            # Post-Process: Citation Manager (Enrichment) & Renaming
+            logging.info(f"Verifying citations and renaming: {pdf_file}")
+            # Pass output_dir and pdf_path to reference manager for potential renaming
+            data = reference_manager.process(data, output_dir, model_name=model_name, pdf_path=pdf_path)
             
             # Write to Excel (Sheet addition)
             add_paper_to_workbook(wb, data)
