@@ -111,6 +111,13 @@ def add_paper_to_workbook(wb, paper_data):
     ws['A1'] = "Category/Question"
     ws['B1'] = "Extracted Answer"
     
+    # Add Back to Dashboard Link
+    c_back = ws['C1']
+    c_back.value = "Back to Dashboard"
+    c_back.hyperlink = "#'Dashboard'!A1"
+    c_back.style = "Hyperlink"
+    c_back.alignment = Alignment(horizontal='center', vertical='center')
+    
     # Define the order of keys to write
     keys_order = [
         "Title", "Authors", "Journal", "Volume", "Pages", "Year", "DOI",
@@ -183,6 +190,7 @@ def add_paper_to_workbook(wb, paper_data):
     # Formatting
     ws.column_dimensions['A'].width = 30
     ws.column_dimensions['B'].width = 100
+    ws.column_dimensions['C'].width = 25
     
     # Global Alignment & Wrapping
     for row in ws.iter_rows(min_row=1, max_row=row_idx-1, min_col=1, max_col=2):

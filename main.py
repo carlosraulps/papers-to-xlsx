@@ -142,6 +142,9 @@ def main():
     parser.add_argument("folder", help="Path to the folder containing PDF files")
     args = parser.parse_args()
 
+    # Setup Encoding for Unicode Safety
+    sys.stdout.reconfigure(encoding='utf-8')
+
     # Interactive Model Selection
     model_name = select_model()
 
@@ -168,6 +171,26 @@ def main():
     
     # Initialize Excel Workbook (Load existing or create new)
     wb = load_or_create_workbook(excel_file_path)
+    
+    # --- Pre-processing: Sanitize Filenames ---
+    logging.info("Sanitizing filenames...")
+    for filename in os.listdir(input_folder):
+        if not filename.lower().endswith(".pdf"):
+             continue
+             
+        # Replace spaces, double underscores, etc
+        new_name = filename.replace(" ", "_").replace("__", "_")
+        # Keep dots, hyphens, underscores, alphanumerics
+        new_name = "".join(c for c in new_name if c.isalnum() or c in "._-")
+        
+        if new_name != filename:
+            old_p = os.path.join(input_folder, filename)
+            new_p = os.path.join(input_folder, new_name)
+            try:
+                os.rename(old_p, new_p)
+                logging.info(f"Sanitized: {filename} -> {new_name}")
+            except Exception as e:
+                logging.error(f"Could not sanitize {filename}: {e}")
     
     # --- PDF Verification & Deduplication Step ---
     # Replaces simple os.listdir
@@ -203,32 +226,30 @@ def main():
             # Pass output_dir and pdf_path to reference manager for potential renaming
             data = reference_manager.process(data, output_dir, model_name=model_name, pdf_path=pdf_path)
             
+            # FIX: Update state if renamed
+            if 'pdf_renamed' in data:
+                 new_name = data['pdf_renamed']
+                 pdf_path = os.path.join(input_folder, new_name)
+                 pdf_file = new_name # Update loop variable for logging
+                 logging.info(f"State updated: Current file is now {pdf_file}")
+            
             # Write to Excel (Sheet addition)
             add_paper_to_workbook(wb, data)
             
-            # Rename File (Renaming happens in INPUT folder, as per organization feature)
-            new_filename = rename_pdf(pdf_path, data)
-            logging.info(f"Renamed {pdf_file} to {new_filename}")
-            
-            # Update Memory
-            processed_log[new_filename] = "Processed" # New name
-            processed_log[pdf_file] = "Processed (Renamed)" # Old name
-            
-            save_processed_log(processed_log, log_file_path)
-            
-            # Save Workbook (Incremental save)
+            # Save Progress (Incremental)
             save_workbook(wb, excel_file_path)
             
-            processed_count += 1
-            logging.info(f"Successfully processed and saved: {new_filename}")
+            processed_log[pdf_file] = "Processed"
+            save_processed_log(processed_log, log_file_path)
             
-        except Exception as e:
-            error_msg = str(e)
-            logging.error(f"Failed to process {pdf_file}. Error: {error_msg}")
-            timestamp = logging.Formatter('%(asctime)s').format(logging.LogRecord(None, None, None, None, None, None, None))
-            with open(error_log_path, "a") as f:
-                 f.write(f"[{timestamp}] Error processing {pdf_file}: {error_msg}\n")
+            processed_count += 1
+            logging.info(f"Success: {pdf_file}")
 
+        except Exception as e:
+            logging.error(f"Error processing {pdf_file}: {e}")
+            with open(error_log_path, 'a') as ef:
+                ef.write(f"{pdf_file}: {str(e)}\n")
+            
     if processed_count == 0:
         logging.info("No new papers to process.")
         # Ensure dashboard is up to date and sheets are sorted
