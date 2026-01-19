@@ -216,6 +216,31 @@ def main():
     except Exception as e:
         logging.warning(f"Log sync warning: {e}")
         
+    # --- Garbage Collection: Remove Zombies (Log entries not on disk) ---
+    logging.info("Running Garbage Collection on logs...")
+    zombies = []
+    # Create copy of keys to iterate while modifying
+    for processed_file in list(processed_log.keys()):
+        # Check if file really exists in input_folder
+        # Note: processed_log keys are filenames
+        full_path = os.path.join(input_folder, processed_file)
+        
+        # Also check duplicates folder? No, if moved to duplicates, it's "gone" from main processing view.
+        # But if we delete it from log, it might get re-processed if moved back?
+        # User wants sync: "deleted papers in dir dont do that".
+        # So if not in input_folder, remove from log.
+        if not os.path.exists(full_path):
+             # Check if it was renamed to something else that IS there?
+             # Too complex. Simple rule: If filename in log missing from disk, delete entry.
+             zombies.append(processed_file)
+             del processed_log[processed_file]
+
+    if zombies:
+        logging.info(f"Removed {len(zombies)} zombie entries from log (files deleted or moved): {zombies[:3]}...")
+        save_processed_log(processed_log, log_file_path)
+    else:
+        logging.info("Logs are clean (no zombies found).")
+        
     # Initialize Excel Workbook (Load existing or create new)
     wb = load_or_create_workbook(excel_file_path)
 

@@ -97,11 +97,27 @@ def enrich_with_grounding(metadata, missing_keys, model_name="gemini-2.5-flash")
         # Clean markdown
         if text:
             text = text.replace("```json", "").replace("```", "").strip()
-            try:
+                try:
                 found_data = json.loads(text)
                 # Merge found data
                 for k, v in found_data.items():
                     if v and v != "N/A":
+                        # STRICT PROTECTION: Do not overwrite Title if we already have a good one.
+                        # "Good" = Not empty, not "Untitled", length > 5
+                        if k == "Title":
+                            current_title = metadata.get("Title", "")
+                            if current_title and current_title != "Untitled" and len(current_title) > 5 and current_title != "N/A":
+                                 # Ignore new title from search (usually less accurate or formatted differently)
+                                 continue
+                        
+                        # Protect Authors too if list exists
+                        if k == "Authors":
+                             current_authors = metadata.get("Authors", "")
+                             if isinstance(current_authors, list) and len(current_authors) > 0:
+                                 continue
+                             if isinstance(current_authors, str) and len(current_authors) > 5 and current_authors != "Unknown":
+                                 continue
+
                         metadata[k] = v
                         logging.info(f"Grounding: Updated {k} -> {v}")
             except json.JSONDecodeError:
