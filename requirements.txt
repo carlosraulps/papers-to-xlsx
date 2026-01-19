@@ -6,3 +6,4 @@ networkx
 matplotlib
 scipy
 pypdf
+adjustText

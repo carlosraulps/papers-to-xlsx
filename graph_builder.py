@@ -183,54 +183,40 @@ def update_workbook_with_graph(wb):
 
     # --- Visualization ---
     
-    # Obsidian Theme Colors (UPDATED Colors for Blue/Red scheme)
+    # Obsidian Theme Colors
     BG_COLOR = "#202020"
-    PAPER_COLOR = "#FF4500" # Bright Red/Orange-Red
-    CONCEPT_COLOR = "#00BFFF" # Deep Sky Blue
+    PAPER_COLOR = "#FF4500" 
+    CONCEPT_COLOR = "#00BFFF" 
     EDGE_COLOR = "#505050"
-    TEXT_COLOR = "black" # Black text on white stickers for readability
-    
-    # Dynamic Canvas Scaling
-    num_papers = len(paper_nodes)
-    num_nodes = G.number_of_nodes()
-    
-    # Base size (20 inches) for breathing room
-    # Growth Factor (0.5 inch per paper)
-    calc_size = 20 + (num_papers * 0.5)
-    final_size = min(calc_size, 60) # Cap at 60x60
-    
-    logging.info(f"Graph Scaling: {num_papers} papers -> Canvas Size {final_size}x{final_size} inches")
+    TEXT_COLOR = "black" 
     
     # Increase DPI and figure size for better quality
-    plt.figure(figsize=(final_size, final_size), facecolor=BG_COLOR, dpi=150)
+    # Use fixed large size as requested
+    plt.figure(figsize=(24, 24), facecolor=BG_COLOR, dpi=150)
     ax = plt.gca()
     ax.set_facecolor(BG_COLOR)
     
-    # Dynamic Layout Physics: Kamada-Kawai for better separation
+    # Dynamic Layout Physics: Spring Layout with High Repulsion
     import textwrap
-    import scipy # explicit dependency for kamada_kawai
+    import math
+    from adjustText import adjust_text
     
-    try:
-        # Scale forces slightly by number of nodes
-        pos = nx.kamada_kawai_layout(G, scale=num_nodes * 0.1 if num_nodes > 20 else 2.0)
-    except Exception as e:
-        logging.warning(f"Kamada-Kawai layout failed ({e}), falling back to Spring.")
-        pos = nx.spring_layout(G, k=0.8, iterations=50, seed=42)
+    # k = Optimal distance. High k = more repulsion.
+    k_val = 2.0 / math.sqrt(len(G.nodes())) if len(G.nodes()) > 0 else 0.5
+    
+    pos = nx.spring_layout(G, k=k_val, iterations=50, seed=42, scale=2)
     
     # Sizes & Styles
     node_sizes = []
     node_colors = []
-    node_borders = []
     
     for node in G.nodes():
         degree = G.degree(node)
         if G.nodes[node].get("type") == "paper":
-            # Paper nodes bigger
             size = 800 + (degree * 100)
             node_sizes.append(size)
             node_colors.append(PAPER_COLOR)
         else:
-            # Concept nodes scaled by importance
             size = 300 + (degree * 150) 
             node_sizes.append(size)
             node_colors.append(CONCEPT_COLOR)
@@ -241,38 +227,42 @@ def update_workbook_with_graph(wb):
                           node_color=node_colors, 
                           alpha=1.0, 
                           linewidths=2, 
-                          edgecolors="white", # Pop against dark bg
+                          edgecolors="white",
                           ax=ax)
     
-    # Draw Edges with Curvature and varying thickness
+    # Draw Edges 
     edges = G.edges()
     weights = [G[u][v].get('weight', 1) for u, v in edges]
-    widths = [w * 0.8 for w in weights] # Slightly thicker
+    widths = [w * 0.8 for w in weights] 
     
     nx.draw_networkx_edges(G, pos, 
                            edgelist=edges, 
                            width=widths, 
                            edge_color=EDGE_COLOR, 
                            alpha=0.6, 
-                           connectionstyle="arc3,rad=0.1", # Curved lines
+                           connectionstyle="arc3,rad=0.1", 
                            ax=ax)
     
-    # Draw Labels with Text Wrapping and Stickers
-    # 1. Prepare User Labels (Wrapped)
-    labels = {}
-    for node in G.nodes():
-        # Wrap text at ~15 chars
-        labels[node] = "\n".join(textwrap.wrap(str(node), width=15))
+    # Draw Labels with adjustText
+    texts = []
+    for node, (x, y) in pos.items():
+        # Wrap text
+        label_text = "\n".join(textwrap.wrap(str(node), width=15))
         
-    # 2. Draw
-    nx.draw_networkx_labels(G, pos, 
-                            labels=labels,
-                            font_size=10, 
-                            font_weight="bold",
-                            font_color=TEXT_COLOR, 
-                            font_family="sans-serif", 
-                            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="none", alpha=0.85),
-                            ax=ax)
+        # Create text object
+        t = ax.text(x, y, label_text, 
+                    fontsize=10, 
+                    fontweight="bold", 
+                    color=TEXT_COLOR,
+                    fontfamily="sans-serif",
+                    ha='center', va='center',
+                    bbox=dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="none", alpha=0.8))
+        texts.append(t)
+        
+    # Run the physics solver for labels
+    if texts:
+        logging.info("Adjusting label positions (this may take a moment)...")
+        adjust_text(texts, arrowprops=dict(arrowstyle='-', color='gray', lw=0.5))
     
     plt.axis('off')
     plt.tight_layout()
