@@ -15,7 +15,7 @@ def get_client():
         raise ValueError("GOOGLE_API_KEY not found in environment variables.")
     return genai.Client(api_key=api_key)
 
-def analyze_pdf(pdf_path):
+def analyze_pdf(pdf_path, model_name="gemini-2.5-flash"):
     """
     Uploads a PDF to Gemini and extracts analysis data in JSON format.
     """
@@ -81,7 +81,7 @@ def analyze_pdf(pdf_path):
             logging.info(f"Analysis attempt {attempt + 1}")
             try:
                 response = client.models.generate_content(
-                    model='gemini-3-flash',
+                    model=model_name,
                     contents=[file_ref, prompt],
                     config=config
                 )

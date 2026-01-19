@@ -48,7 +48,7 @@ def get_grounding_tool():
         google_search=types.GoogleSearch() 
     )
 
-def enrich_with_grounding(metadata, missing_keys):
+def enrich_with_grounding(metadata, missing_keys, model_name="gemini-2.5-flash"):
     """
     Uses Gemini with Google Search to find missing citation details.
     """
@@ -83,7 +83,7 @@ def enrich_with_grounding(metadata, missing_keys):
         logging.info(f"Grounding: Searching for missing info: {missing_keys}")
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=model_name,
             contents=prompt,
             config=types.GenerateContentConfig(
                 tools=[get_grounding_tool()],
@@ -185,7 +185,7 @@ def export_aps(db, output_dir):
             entry = f"{authors}, {journal} {volume}, {pages} ({year})."
             f.write(entry + "\n")
 
-def process(paper_data, output_dir):
+def process(paper_data, output_dir, model_name="gemini-2.5-flash"):
     """Main processing function for references."""
     # 1. Extract Metadata specific for citations
     metadata = {k: paper_data.get(k, "N/A") for k in ["Title", "Authors", "Journal", "Volume", "Pages", "Year", "DOI"]}
@@ -196,7 +196,7 @@ def process(paper_data, output_dir):
     # 3. Enrich if missing
     if missing:
         logging.info(f"Missing citation info for {metadata.get('Title','Unknown')}: {missing}")
-        metadata = enrich_with_grounding(metadata, missing)
+        metadata = enrich_with_grounding(metadata, missing, model_name)
         # Update original paper_data with enriched info? 
         # Yes, beneficial for Excel too.
         for k, v in metadata.items():

@@ -68,10 +68,79 @@ def rename_pdf(original_path, data):
     os.rename(original_path, new_path)
     return new_filename
 
+from google import genai
+
+def select_model():
+    """
+    Fetches available models from the API and asks the user to select one.
+    """
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        print("Error: GOOGLE_API_KEY not found.")
+        sys.exit(1)
+        
+    client = genai.Client(api_key=api_key)
+    
+    print("\nFetching available Gemini models...")
+    try:
+        # List models and filter for generateContent support
+        # genai SDK 0.x vs 1.x might differ, but list_models usually returns iter of Model objects
+        # We need to check supported_generation_methods or similar if available, or just name filtering
+        # The prompt instruction says "look for supported_generation_methods"
+        
+        all_models = list(client.models.list())
+        valid_models = []
+        
+        for m in all_models:
+             # Check if it supports content generation
+             # Attributes might be 'supported_generation_methods'
+             methods = getattr(m, 'supported_generation_methods', [])
+             if 'generateContent' in methods:
+                 valid_models.append(m.name)
+        
+        # Sort for consistency
+        valid_models.sort()
+        
+        if not valid_models:
+            print("No models found that support generateContent.")
+            sys.exit(1)
+            
+        print("\nAvailable Models:")
+        for idx, name in enumerate(valid_models):
+            # name usually comes as "models/gemini-1.5-flash". 
+            # We can display it as is.
+            print(f"{idx + 1}. {name}")
+            
+        while True:
+            try:
+                selection = input("\nSelect a model number: ")
+                idx = int(selection) - 1
+                if 0 <= idx < len(valid_models):
+                    selected_model = valid_models[idx]
+                    print(f"Selected model: {selected_model}")
+                    # If model name starts with "models/", genai might expect it or not. 
+                    # Usually it handles it, but sometimes "gemini-..." is preferred.
+                    # We will use the full name returned by API to be safe.
+                    return selected_model
+                else:
+                    print("Invalid selection. Please try again.")
+            except ValueError:
+                print("Please enter a number.")
+                
+    except Exception as e:
+        print(f"Error fetching models: {e}")
+        # Fallback
+        fallback = "gemini-2.5-flash"
+        print(f"Defaulting to {fallback}")
+        return fallback
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze PDF scientific papers using Gemini 2.5 Flash.")
     parser.add_argument("folder", help="Path to the folder containing PDF files")
     args = parser.parse_args()
+
+    # Interactive Model Selection
+    model_name = select_model()
 
     # Resolve paths (Dynamic Output Logic)
     input_folder = os.path.abspath(args.folder)
@@ -124,12 +193,12 @@ def main():
         try:
             # Analyze
             logging.info(f"Processing: {pdf_file}")
-            data = analyze_pdf(pdf_path)
+            data = analyze_pdf(pdf_path, model_name=model_name)
             
             # Post-Process: Citation Manager (Enrichment)
             logging.info(f"Verifying citations for: {pdf_file}")
             # Pass output_dir to reference manager
-            data = reference_manager.process(data, output_dir)
+            data = reference_manager.process(data, output_dir, model_name=model_name)
             
             # Write to Excel (Sheet addition)
             add_paper_to_workbook(wb, data)
