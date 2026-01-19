@@ -239,7 +239,7 @@ def main():
              found_fuzzy = False
              
              # Try normalized NFC (standard for MacOS paths sometimes)
-             import unicodedata
+             # import unicodedata (Removed to avoid UnboundLocalError)
              norm_key = unicodedata.normalize('NFC', processed_file)
              if os.path.exists(os.path.join(input_folder, norm_key)):
                  found_fuzzy = True
