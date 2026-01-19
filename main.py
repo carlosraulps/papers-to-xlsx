@@ -195,21 +195,29 @@ def main():
     # --- PDF Verification & Deduplication Step ---
     # Replaces simple os.listdir
     logging.info("Running PDF Verification and Deduplication...")
-    pdf_files = verify_pdfs.scan_and_deduplicate(input_folder)
+    all_pdf_files = verify_pdfs.scan_and_deduplicate(input_folder)
     
-    if not pdf_files:
+    if not all_pdf_files:
         logging.warning(f"No valid PDF files found in {input_folder} (others may be duplicates or corrupt)")
         # Even if no PDFs, we might want to save the empty workbook or just exit
         if processed_log:
              pass
         sys.exit(0)
 
-    logging.info(f"Scanning {len(pdf_files)} valid PDF files in {input_folder}...")
+    # --- Incremental Processing Filter ---
+    # Filter out files that are already in the log
+    pdf_files = [f for f in all_pdf_files if f not in processed_log and processed_log.get(f) != "Failed"]
+    
+    skipped_count = len(all_pdf_files) - len(pdf_files)
+    if skipped_count > 0:
+        logging.info(f"Skipping {skipped_count} already processed files.")
+
+    logging.info(f"Scanning {len(pdf_files)} new valid PDF files in {input_folder}...")
     
     processed_count = 0
 
     for pdf_file in pdf_files:
-        # Check Memory - Strict Check
+        # Check Memory - Strict Check (Double check)
         if pdf_file in processed_log:
             logging.info(f"Skipping {pdf_file} - Already analyzed")
             continue

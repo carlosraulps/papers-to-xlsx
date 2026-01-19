@@ -19,23 +19,26 @@ def verify_pdf_integrity(filepath):
     Returns: (is_valid, reason)
     """
     try:
-        reader = pypdf.PdfReader(filepath)
-        if len(reader.pages) == 0:
-             return False, "Empty PDF"
-             
-        # Check for text content specifically
-        text_content = ""
-        for page in reader.pages:
-            try:
-                text = page.extract_text()
-                if text:
-                    text_content += text
-            except:
-                pass
-        
-        if len(text_content.strip()) < 50: # Arbitrary threshold for "scanned/image only"
-             return False, "Scanned or Image-only (No Text Extracted)"
-             
+        # Use simple open to ensure closure
+        with open(filepath, 'rb') as f:
+            reader = pypdf.PdfReader(f)
+            
+            if len(reader.pages) == 0:
+                 return False, "Empty PDF"
+                 
+            # Check for text content specifically
+            text_content = ""
+            for page in reader.pages:
+                try:
+                    text_extracted = page.extract_text()
+                    if text_extracted:
+                        text_content += text_extracted
+                except:
+                    pass
+            
+            if len(text_content.strip()) < 50: # Arbitrary threshold for "scanned/image only"
+                 return False, "Scanned or Image-only (No Text Extracted)"
+                 
         return True, "Valid"
         
     except Exception as e:
