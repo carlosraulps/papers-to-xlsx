@@ -424,10 +424,7 @@ def main():
             with open(error_log_path, 'a') as ef:
                 ef.write(f"{pdf_file}: {str(e)}\n")
 
-        except Exception as e:
-            logging.error(f"Error processing {pdf_file}: {e}")
-            with open(error_log_path, 'a') as ef:
-                ef.write(f"{pdf_file}: {str(e)}\n")
+
             
     if processed_count == 0:
         logging.info("No new papers to process.")
