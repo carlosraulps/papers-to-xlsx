@@ -10,6 +10,7 @@ import graph_builder
 import reference_manager
 import unicodedata
 import mimetypes
+import shutil
 
 # Load env variables
 load_dotenv()
@@ -172,104 +173,106 @@ def main():
     processed_log = load_processed_log(log_file_path)
     
     # --- Sync Step: Recover from Crash ---
+    # DISABLED by user request.
     # Check if files in DB but missing from Log
-    try:
-        db = reference_manager.load_database(output_dir)
-        logging.info(f"Syncing logs with {len(db)} database entries...")
+    # try:
+    #     db = reference_manager.load_database(output_dir)
+    #     logging.info(f"Syncing logs with {len(db)} database entries...")
         
-        recovered_count = 0
-        for entry in db:
-            # Reconstruct expected filename from metadata
-            # Matches logic in reference_manager.process
-            authors = entry.get("Authors", "Unknown")
-            if isinstance(authors, list):
-                 first_author = authors[0].split()[-1] if authors else "Unknown"
-            else:
-                 first_author = authors.split(',')[0].split()[-1] if ',' in authors else authors.split()[-1]
+    #     recovered_count = 0
+    #     for entry in db:
+    #         # Reconstruct expected filename from metadata
+    #         # Matches logic in reference_manager.process
+    #         authors = entry.get("Authors", "Unknown")
+    #         if isinstance(authors, list):
+    #              first_author = authors[0].split()[-1] if authors else "Unknown"
+    #         else:
+    #              first_author = authors.split(',')[0].split()[-1] if ',' in authors else authors.split()[-1]
             
-            year = str(entry.get("Year", "0000"))
-            title = entry.get("Title", "Untitled")
+    #         year = str(entry.get("Year", "0000"))
+    #         title = entry.get("Title", "Untitled")
             
-            # Sanitize parts
-            first_author = "".join(x for x in first_author if x.isalnum())
-            year = "".join(x for x in year if x.isalnum())[:4]
-            title = "".join(x for x in title if x.isalnum() or x in " -_")
-            title = title[:150]
+    #         # Sanitize parts
+    #         first_author = "".join(x for x in first_author if x.isalnum())
+    #         year = "".join(x for x in year if x.isalnum())[:4]
+    #         title = "".join(x for x in title if x.isalnum() or x in " -_")
+    #         title = title[:150]
             
-            # Reconstruct Filename
-            expected_name = f"{first_author}-{year}-{title}.pdf"
-            expected_name = " ".join(expected_name.split()).replace(" ", "_")
+    #         # Reconstruct Filename
+    #         expected_name = f"{first_author}-{year}-{title}.pdf"
+    #         expected_name = " ".join(expected_name.split()).replace(" ", "_")
             
-            # Check if this file exists in input folder
-            full_path = os.path.join(input_folder, expected_name)
+    #         # Check if this file exists in input folder
+    #         full_path = os.path.join(input_folder, expected_name)
             
-            if os.path.exists(full_path):
-                # If exists and NOT in log, add it
-                if expected_name not in processed_log:
-                    processed_log[expected_name] = "Processed (Recovered)"
-                    recovered_count += 1
+    #         if os.path.exists(full_path):
+    #             # If exists and NOT in log, add it
+    #             if expected_name not in processed_log:
+    #                 processed_log[expected_name] = "Processed (Recovered)"
+    #                 recovered_count += 1
         
-        if recovered_count > 0:
-            logging.info(f"Recovered {recovered_count} files from database into processed log.")
-            save_processed_log(processed_log, log_file_path)
+    #     if recovered_count > 0:
+    #         logging.info(f"Recovered {recovered_count} files from database into processed log.")
+    #         save_processed_log(processed_log, log_file_path)
             
-    except Exception as e:
-        logging.warning(f"Log sync warning: {e}")
+    # except Exception as e:
+    #     logging.warning(f"Log sync warning: {e}")
         
     # --- Garbage Collection: Remove Zombies (Log entries not on disk) ---
-    logging.info("Running Garbage Collection on logs...")
-    zombies = []
-    # Create copy of keys to iterate while modifying
-    for processed_file in list(processed_log.keys()):
-        # Check if file really exists in input_folder
-        # Note: processed_log keys are filenames
-        full_path = os.path.join(input_folder, processed_file)
+    # DISABLED by user request.
+    # logging.info("Running Garbage Collection on logs...")
+    # zombies = []
+    # # Create copy of keys to iterate while modifying
+    # for processed_file in list(processed_log.keys()):
+    #     # Check if file really exists in input_folder
+    #     # Note: processed_log keys are filenames
+    #     full_path = os.path.join(input_folder, processed_file)
         
-        # Also check duplicates folder? No, if moved to duplicates, it's "gone" from main processing view.
-        # But if we delete it from log, it might get re-processed if moved back?
-        # User wants sync: "deleted papers in dir dont do that".
-        # So if not in input_folder, remove from log.
-        if not os.path.exists(full_path):
-             # ZOMBIE RECOVERY logic for Unicode (Wójcik vs Wojcik)
-             # The key in JSON might use one normalization, disk another.
-             # Let's try normalizing the key to match disk.
+    #     # Also check duplicates folder? No, if moved to duplicates, it's "gone" from main processing view.
+    #     # But if we delete it from log, it might get re-processed if moved back?
+    #     # User wants sync: "deleted papers in dir dont do that".
+    #     # So if not in input_folder, remove from log.
+    #     if not os.path.exists(full_path):
+    #          # ZOMBIE RECOVERY logic for Unicode (Wójcik vs Wojcik)
+    #          # The key in JSON might use one normalization, disk another.
+    #          # Let's try normalizing the key to match disk.
              
-             # 1. Check if the file is actually there but name is just slightly different encoding
-             # List directory and fuzzy match?
-             found_fuzzy = False
+    #          # 1. Check if the file is actually there but name is just slightly different encoding
+    #          # List directory and fuzzy match?
+    #          found_fuzzy = False
              
-             # Try normalized NFC (standard for MacOS paths sometimes)
-             # import unicodedata (Removed to avoid UnboundLocalError)
-             norm_key = unicodedata.normalize('NFC', processed_file)
-             if os.path.exists(os.path.join(input_folder, norm_key)):
-                 found_fuzzy = True
+    #          # Try normalized NFC (standard for MacOS paths sometimes)
+    #          # import unicodedata (Removed to avoid UnboundLocalError)
+    #          norm_key = unicodedata.normalize('NFC', processed_file)
+    #          if os.path.exists(os.path.join(input_folder, norm_key)):
+    #              found_fuzzy = True
              
-             # Try NFD (MacOS often decomposes)
-             norm_key_nfd = unicodedata.normalize('NFD', processed_file)
-             if os.path.exists(os.path.join(input_folder, norm_key_nfd)):
-                 found_fuzzy = True
-                 
-             if not found_fuzzy:
-                 zombies.append(processed_file)
-                 del processed_log[processed_file]
-                 pass
-             else:
-                 # It exists, just encoding mismatch. Keep it.
-                 pass
-
-    if zombies:
-        logging.info(f"Removed {len(zombies)} zombie entries from log (files deleted or moved): {zombies[:3]}...")
-        save_processed_log(processed_log, log_file_path)
-    else:
-        logging.info("Logs are clean (no zombies found).")
+    #          # Try NFD (MacOS often decomposes)
+    #          norm_key_nfd = unicodedata.normalize('NFD', processed_file)
+    #          if os.path.exists(os.path.join(input_folder, norm_key_nfd)):
+    #              found_fuzzy = True
+                  
+    #          if not found_fuzzy:
+    #              zombies.append(processed_file)
+    #              del processed_log[processed_file]
+    #              pass
+    #          else:
+    #              # It exists, just encoding mismatch. Keep it.
+    #              pass
+    # 
+    # if zombies:
+    #     logging.info(f"Removed {len(zombies)} zombie entries from log (files deleted or moved): {zombies[:3]}...")
+    #     save_processed_log(processed_log, log_file_path)
+    # else:
+    #     logging.info("Logs are clean (no zombies found).")
         
     # Initialize Excel Workbook (Load existing or create new)
     wb = load_or_create_workbook(excel_file_path)
 
     # --- Sync Step 2: Excel Sheet Check (Truth) ---
-    # Catch "Zombie" files that are in Excel but not in Log
-    existing_sheets = set(wb.sheetnames)
-    logging.info(f"Syncing logs with {len(existing_sheets)} Excel sheets...")
+    # DISABLED by user request.
+    # existing_sheets = set(wb.sheetnames)
+    # logging.info(f"Syncing logs with {len(existing_sheets)} Excel sheets...")
     
     excel_recovered = 0
     # Create a mapping of likely sheet names for files in input folder
@@ -281,43 +284,45 @@ def main():
     mimetypes.add_type("application/pdf", ".pdf")
 
     # --- Pre-processing: Sanitize Filenames ---
-    logging.info("Sanitizing filenames...")
-    for filename in os.listdir(input_folder):
-        if not filename.lower().endswith(".pdf"):
-             continue
-             
-        # Normalize unicode characters to ASCII equivalents (e.g. Wójcik -> Wojcik)
-        # NFD decomposition splits characters from their accents
-        normalized_name = unicodedata.normalize('NFD', filename)
-        # Filter out non-spacing mark characters (accents)
-        ascii_name = "".join(c for c in normalized_name if unicodedata.category(c) != 'Mn')
-        
-        # Replace spaces, double underscores, etc
-        new_name = ascii_name.replace(" ", "_").replace("__", "_")
-        # Keep dots, hyphens, underscores, alphanumerics
-        new_name = "".join(c for c in new_name if c.isalnum() or c in "._-")
-        
-        if new_name != filename:
-            old_p = os.path.join(input_folder, filename)
-            new_p = os.path.join(input_folder, new_name)
-            
-            # COLLISION PROTECTION: Don't overwrite existing files during sanitization
-            if os.path.exists(new_p):
-                base, ext = os.path.splitext(new_name)
-                counter = 1
-                while os.path.exists(new_p):
-                    new_p = os.path.join(input_folder, f"{base}_{counter}{ext}")
-                    counter += 1
-                new_name = os.path.basename(new_p)
-
-            try:
-                os.rename(old_p, new_p)
-                logging.info(f"Sanitized: {filename} -> {new_name}")
-            except Exception as e:
-                logging.error(f"Could not sanitize {filename}: {e}")
+    # DISABLED by user request.
+    # logging.info("Sanitizing filenames...")
+    # for filename in os.listdir(input_folder):
+    #     if not filename.lower().endswith(".pdf"):
+    #          continue
+    #          
+    #     # Normalize unicode characters to ASCII equivalents (e.g. Wójcik -> Wojcik)
+    #     # NFD decomposition splits characters from their accents
+    #     normalized_name = unicodedata.normalize('NFD', filename)
+    #     # Filter out non-spacing mark characters (accents)
+    #     ascii_name = "".join(c for c in normalized_name if unicodedata.category(c) != 'Mn')
+    #     
+    #     # Replace spaces, double underscores, etc
+    #     new_name = ascii_name.replace(" ", "_").replace("__", "_")
+    #     # Keep dots, hyphens, underscores, alphanumerics
+    #     new_name = "".join(c for c in new_name if c.isalnum() or c in "._-")
+    #     
+    #     if new_name != filename:
+    #         old_p = os.path.join(input_folder, filename)
+    #         new_p = os.path.join(input_folder, new_name)
+    #         
+    #         # COLLISION PROTECTION: Don't overwrite existing files during sanitization
+    #         if os.path.exists(new_p):
+    #             base, ext = os.path.splitext(new_name)
+    #             counter = 1
+    #             while os.path.exists(new_p):
+    #                 new_p = os.path.join(input_folder, f"{base}_{counter}{ext}")
+    #                 counter += 1
+    #             new_name = os.path.basename(new_p)
+    # 
+    #         try:
+    #             os.rename(old_p, new_p)
+    #             logging.info(f"Sanitized: {filename} -> {new_name}")
+    #         except Exception as e:
+    #             logging.error(f"Could not sanitize {filename}: {e}")
     
     # --- Strict Binary Deduplication (Pre-Flight) ---
-    logging.info("Running Strict Binary Deduplication...")
+    # DISABLED by user request.
+    # logging.info("Running Strict Binary Deduplication...")
     # This ensures duplicates are moved BEFORE we even look at the log or start processing
     # Using verify_pdfs.scan_and_deduplicate which we already improved?
     # Actually, the user asked for a specific "deduplicate_files" function or logic that runs *before* loop.
@@ -352,9 +357,12 @@ def main():
     seen_hashes_current_run = {}
     
     raw_files = [f for f in os.listdir(input_folder) if f.lower().endswith('.pdf')]
-    logging.info(f"Scanning {len(raw_files)} files for binary duplicates...")
+    # logging.info(f"Scanning {len(raw_files)} files for binary duplicates...")
     
     for filename in raw_files:
+        all_pdf_files.append(filename)
+        continue
+
         filepath = os.path.join(input_folder, filename)
         try:
             # MD5 Hash
@@ -467,7 +475,9 @@ def main():
             add_paper_to_workbook(wb, data)
             save_workbook(wb, excel_file_path)
             
-            # Phase E: ATOMIC SUCCESS: Mark as Processed immediately
+            # Phase E: ATOMIC SUCCESS (Log Initial State)
+            # Mark as Processed immediately with the ORIGINAL name.
+            # If the script crashes after this line, we know we have the data in Excel.
             processed_log[pdf_file] = "Processed" 
             save_processed_log(processed_log, log_file_path)
             
@@ -480,11 +490,13 @@ def main():
             logging.info(f"Success: {pdf_file} (Log & Hash Updated)")
 
             # Phase F: Renaming (The "Nice to Have" Step, separate Phase)
+            # We strictly catch ALL exceptions here so the loop never crashes after a successful analysis.
             if 'proposed_filename' in data:
                  new_name = data['proposed_filename']
                  new_full_path = os.path.join(input_folder, new_name)
+                 current_log_name = pdf_file # Currently logged as this
                  
-                 # Handle Collisions (Robust Renaming) - Re-implement collision logic here since ref_manager is stateless
+                 # Handle Collisions (Robust Renaming)
                  if os.path.exists(new_full_path) and new_full_path != pdf_path:
                      counter = 2
                      original_base, ext = os.path.splitext(new_name)
@@ -500,7 +512,8 @@ def main():
                          logging.info(f"Renamed: {pdf_file} -> {new_name}")
                          
                          # Update Log & Registry to track new name
-                         del processed_log[pdf_file]
+                         if current_log_name in processed_log:
+                             del processed_log[current_log_name]
                          processed_log[new_name] = "Processed"
                          save_processed_log(processed_log, log_file_path)
                          
@@ -508,9 +521,11 @@ def main():
                          with open(hashes_file_path, 'w') as f:
                              json.dump(processed_hashes, f, indent=4)
                              
-                     except OSError as rename_error:
-                        # Catch "I/O operation on closed file" or file permissions
+                     except Exception as rename_error:
+                        # Catch "I/O operation on closed file", permissions, anything.
                         logging.warning(f"Renaming Warning for {pdf_file}: {rename_error}")
+                        # We do NOT remove the 'Processed' flag for the old name.
+                        # It is still processed, just not renamed.
                         with open(error_log_path, 'a') as ef:
                             ef.write(f"{pdf_file} (Rename Warning): {str(rename_error)}\n")
             

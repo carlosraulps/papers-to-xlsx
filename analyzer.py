@@ -17,24 +17,47 @@ def get_client():
 
 def upload_pdf(pdf_path):
     """
-    Uploads a PDF to Gemini using SDK's path parameter.
-    The SDK manages the file handle internally.
+    Uploads a PDF to Gemini.
     Returns: file_ref (API object)
     """
+    import io
     client = get_client()
+
     logging.info(f"Uploading file: {pdf_path}")
     
-    # Let SDK handle file I/O - it will auto-detect MIME type from .pdf extension
-    file_ref = client.files.upload(path=pdf_path)
-    
-    # Wait for processing
-    while file_ref.state.name == "PROCESSING":
-        logging.info("Processing file...")
-        time.sleep(2)
-        file_ref = client.files.get(name=file_ref.name)
+    # Read file content into memory to avoid "I/O operation on closed file"
+    with open(pdf_path, 'rb') as f:
+        file_content = f.read()
         
+    f_bytes = io.BytesIO(file_content)
+
+    try:
+        # Upload without explicit MIME type config first, relying on SDK detection/default
+        # Some SDK versions accept `mime_type` in `upload_file`, others in `config`.
+        # Safest generic way for Google GenAI SDK:
+        f_bytes.seek(0)
+        file_ref = client.files.upload(file=f_bytes, config={'mime_type': 'application/pdf'})
+    except Exception as e_dict:
+        logging.warning(f"Upload with dict config failed: {e_dict}")
+        try:
+             # Try object config
+             upload_config = types.UploadFileConfig(mime_type='application/pdf')
+             f_bytes.seek(0)
+             file_ref = client.files.upload(file=f_bytes, config=upload_config)
+        except Exception as e_config:
+            logging.warning(f"Upload with object config failed: {e_config}")
+            # Fallback to no config
+            f_bytes.seek(0)
+            file_ref = client.files.upload(file=f_bytes)
+    
+    # Verify upload (Active state check)
+    while file_ref.state.name == "PROCESSING":
+            logging.info("Processing file...")
+            time.sleep(2)
+            file_ref = client.files.get(name=file_ref.name)
+            
     if file_ref.state.name == "FAILED":
-        raise ValueError("File upload failed.")
+            raise ValueError("File upload failed.")
 
     logging.info(f"File uploaded successfully: {file_ref.name}")
     return file_ref

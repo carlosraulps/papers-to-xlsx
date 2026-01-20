@@ -192,7 +192,9 @@ def update_workbook_with_graph(wb):
     
     # Increase DPI and figure size for better quality
     # Use fixed large size as requested
-    plt.figure(figsize=(24, 24), facecolor=BG_COLOR, dpi=150)
+    # Increase DPI and figure size for better quality
+    # Use fixed huge size as requested (40x40)
+    plt.figure(figsize=(40, 40), facecolor=BG_COLOR, dpi=150)
     ax = plt.gca()
     ax.set_facecolor(BG_COLOR)
     
@@ -202,68 +204,91 @@ def update_workbook_with_graph(wb):
     from adjustText import adjust_text
     
     # k = Optimal distance. High k = more repulsion.
-    k_val = 2.0 / math.sqrt(len(G.nodes())) if len(G.nodes()) > 0 else 0.5
+    # 15.0 / sqrt(N) pushes nodes MASSIVELY apart (Supercharge Repulsion)
+    num_nodes = len(G.nodes())
+    k_val = 15.0 / math.sqrt(num_nodes) if num_nodes > 0 else 2.0
     
-    pos = nx.spring_layout(G, k=k_val, iterations=50, seed=42, scale=2)
+    # Scale=10 expands coordinate system significantly to handle the high repulsion
+    # Iterations=300 allows the physics engine long enough to push everything apart
+    pos = nx.spring_layout(G, k=k_val, iterations=300, seed=42, scale=10)
     
     # Sizes & Styles
     node_sizes = []
     node_colors = []
     
+    # Calculate sizes based on Degree Centrality
     for node in G.nodes():
         degree = G.degree(node)
+        
+        # Papers are Hubs? No, usually Concepts connect many papers.
+        # Regardless, use degree for size.
+        
+        # Base Size 3000, + 1000 per partial degree
+        # Let's use the formula: Size = 3000 + (Degree * 1000)
+        size = 3000 + (degree * 1000)
+        node_sizes.append(size)
+
         if G.nodes[node].get("type") == "paper":
-            size = 800 + (degree * 100)
-            node_sizes.append(size)
             node_colors.append(PAPER_COLOR)
         else:
-            size = 300 + (degree * 150) 
-            node_sizes.append(size)
             node_colors.append(CONCEPT_COLOR)
             
     # Draw Nodes with Borders
-    nx.draw_networkx_nodes(G, pos, 
+    nodes = nx.draw_networkx_nodes(G, pos, 
                           node_size=node_sizes, 
                           node_color=node_colors, 
                           alpha=1.0, 
-                          linewidths=2, 
+                          linewidths=3, # Thicker border for big nodes
                           edgecolors="white",
                           ax=ax)
     
     # Draw Edges 
     edges = G.edges()
     weights = [G[u][v].get('weight', 1) for u, v in edges]
-    widths = [w * 0.8 for w in weights] 
+    widths = [w * 1.0 for w in weights] # Slightly thicker edges
     
     nx.draw_networkx_edges(G, pos, 
                            edgelist=edges, 
                            width=widths, 
                            edge_color=EDGE_COLOR, 
-                           alpha=0.6, 
+                           alpha=0.5, 
                            arrows=True, # Required for connectionstyle
                            connectionstyle="arc3,rad=0.1", 
                            ax=ax)
     
-    # Draw Labels with adjustText
+    # Draw Labels with Dynamic Font Size
     texts = []
     for node, (x, y) in pos.items():
-        # Wrap text
+        degree = G.degree(node)
+        
+        # Font Size Calculation: 8 + (Degree * 1.2)
+        font_size = 8 + (degree * 1.2)
+        # Cap max font size purely for sanity (e.g. 24)
+        if font_size > 24: 
+            font_size = 24
+        
+        # Wrap text - loosen wrapping for larger fonts? Keep 15 for now.
         label_text = "\n".join(textwrap.wrap(str(node), width=15))
         
-        # Create text object
+        # Create text object with dynamic size
         t = ax.text(x, y, label_text, 
-                    fontsize=10, 
+                    fontsize=font_size, 
                     fontweight="bold", 
                     color=TEXT_COLOR,
                     fontfamily="sans-serif",
                     ha='center', va='center',
-                    bbox=dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="none", alpha=0.8))
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="none", alpha=0.6))
         texts.append(t)
         
     # Run the physics solver for labels
     if texts:
         logging.info("Adjusting label positions (this may take a moment)...")
-        adjust_text(texts, arrowprops=dict(arrowstyle='-', color='gray', lw=0.5))
+        # Increase arrows to make label movement clearer
+        # Add 'add_objects=[nodes]' so text bounces off the balls
+        adjust_text(texts, 
+                    add_objects=[nodes], 
+                    arrowprops=dict(arrowstyle='-', color='gray', lw=1.0),
+                    expand_points=(2.0, 2.0))
     
     plt.axis('off')
     plt.tight_layout()
