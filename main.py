@@ -4,7 +4,7 @@ import argparse
 import logging
 import json
 from dotenv import load_dotenv
-from analyzer import analyze_pdf
+from analyzer import analyze_pdf, upload_pdf, analyze_pdf_content
 from excel_writer import load_or_create_workbook, add_paper_to_workbook, save_workbook
 import graph_builder
 import reference_manager
@@ -440,18 +440,34 @@ def main():
             continue
 
         try:
-             # --- 3. Decoupled Processing Loop ---
+             # --- 3. Strict Decoupled Processing Loop ---
             
-            # A. Upload & Analyze
-            logging.info(f"Processing: {pdf_file}")
-            data = analyze_pdf(pdf_path, model_name=model_name)
+            # Phase A: Upload (Explicit Open/Close in analyzer.upload_pdf)
+            logging.info(f"Probessing Phase A - Upload: {pdf_file}")
+            try:
+                # This opens, uploads, and CLOSES the file handle immediately.
+                file_ref = upload_pdf(pdf_path)
+            except Exception as e:
+                logging.error(f"Upload failed for {pdf_file}: {e}")
+                # Log error and skip entire file
+                with open(error_log_path, 'a') as ef:
+                    ef.write(f"{pdf_file}: Upload Failed: {str(e)}\n")
+                continue
+
+            # Phase B: Analyze (Remote API only, no local file access)
+            logging.info(f"Processing Phase B - Analyze: {pdf_file}")
+            data = analyze_pdf_content(file_ref, model_name=model_name)
             
-            # B. Write to Excel (The Core Job)
+            # Phase C: Metadata & Citations (Pure data processing, no rename)
+            logging.info(f"Processing Phase C - Metadata: {pdf_file}")
+            # reference_manager.process now returns 'proposed_filename' without touching disk
+            data = reference_manager.process(data, output_dir, model_name=model_name, pdf_path=pdf_path)
+
+            # Phase D: Write to Excel (The Core Job)
             add_paper_to_workbook(wb, data)
             save_workbook(wb, excel_file_path)
             
-            # C. ATOMIC SUCCESS: Mark as Processed immediately
-            # If we crash after this, at least data is saved.
+            # Phase E: ATOMIC SUCCESS: Mark as Processed immediately
             processed_log[pdf_file] = "Processed" 
             save_processed_log(processed_log, log_file_path)
             
@@ -463,36 +479,40 @@ def main():
             processed_count += 1
             logging.info(f"Success: {pdf_file} (Log & Hash Updated)")
 
-            # D. Renaming & Citations (The "Nice to Have" Step)
-            # This is risky due to I/O and file locks.
-            # If it fails, we keep the processed status but warn the user.
-            try:
-                logging.info(f"Verifying citations and renaming: {pdf_file}")
-                # Note: ref_manager process also does citations.
-                data = reference_manager.process(data, output_dir, model_name=model_name, pdf_path=pdf_path)
-                
-                if 'pdf_renamed' in data:
-                     new_name = data['pdf_renamed']
-                     new_full_path = os.path.join(input_folder, new_name)
-                     
-                     if os.path.exists(new_full_path):
-                         # File moved successfully. Update Log to point to new name.
+            # Phase F: Renaming (The "Nice to Have" Step, separate Phase)
+            if 'proposed_filename' in data:
+                 new_name = data['proposed_filename']
+                 new_full_path = os.path.join(input_folder, new_name)
+                 
+                 # Handle Collisions (Robust Renaming) - Re-implement collision logic here since ref_manager is stateless
+                 if os.path.exists(new_full_path) and new_full_path != pdf_path:
+                     counter = 2
+                     original_base, ext = os.path.splitext(new_name)
+                     while os.path.exists(new_full_path) and new_full_path != pdf_path:
+                         new_name = f"{original_base}_v{counter}{ext}"
+                         new_full_path = os.path.join(input_folder, new_name)
+                         counter += 1
+                 
+                 if new_full_path != pdf_path:
+                     try:
+                         # os.rename uses string paths, perfectly safe vs "closed file"
+                         os.rename(pdf_path, new_full_path)
+                         logging.info(f"Renamed: {pdf_file} -> {new_name}")
+                         
+                         # Update Log & Registry to track new name
                          del processed_log[pdf_file]
                          processed_log[new_name] = "Processed"
                          save_processed_log(processed_log, log_file_path)
                          
-                         # Update Hash Registry to point to new name too
                          processed_hashes[file_hash] = new_name
                          with open(hashes_file_path, 'w') as f:
                              json.dump(processed_hashes, f, indent=4)
                              
-                         logging.info(f"State updated: {pdf_file} -> {new_name}")
-            except (OSError, ValueError) as rename_error:
-                # Catch "I/O operation on closed file" or file permissions
-                logging.warning(f"Renaming/Citation Warning for {pdf_file}: {rename_error}")
-                logging.warning("Data was saved to Excel, so marking as processed despite rename failure.")
-                with open(error_log_path, 'a') as ef:
-                    ef.write(f"{pdf_file} (Rename Warning): {str(rename_error)}\n")
+                     except OSError as rename_error:
+                        # Catch "I/O operation on closed file" or file permissions
+                        logging.warning(f"Renaming Warning for {pdf_file}: {rename_error}")
+                        with open(error_log_path, 'a') as ef:
+                            ef.write(f"{pdf_file} (Rename Warning): {str(rename_error)}\n")
             
         except Exception as e:
             logging.error(f"Error processing {pdf_file}: {e}")

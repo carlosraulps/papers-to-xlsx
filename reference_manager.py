@@ -249,8 +249,8 @@ def process(paper_data, output_dir, model_name="gemini-2.5-flash", pdf_path=None
     export_apa(db, output_dir)
     export_aps(db, output_dir)
     
-    # 6. Rename PDF
-    if pdf_path and os.path.exists(pdf_path):
+    # 6. Propose Rname (Do not rename yet)
+    if pdf_path: # We only need pdf_path for directory context, unlikely to change but good validation
         try:
             authors = paper_data.get("Authors", "Unknown")
             if isinstance(authors, list):
@@ -278,22 +278,13 @@ def process(paper_data, output_dir, model_name="gemini-2.5-flash", pdf_path=None
             new_filename = " ".join(new_filename.split())
             new_filename = new_filename.replace(" ", "_")
             
-            new_path = os.path.join(os.path.dirname(pdf_path), new_filename)
-            
-            # Handle Collisions (Robust Renaming)
-            # If target exists and it's NOT the current file
-            counter = 2
-            original_base, ext = os.path.splitext(new_filename)
-            while os.path.exists(new_path) and new_path != pdf_path:
-                 new_filename = f"{original_base}_v{counter}{ext}"
-                 new_path = os.path.join(os.path.dirname(pdf_path), new_filename)
-                 counter += 1
-            
-            if new_path != pdf_path:
-                os.rename(pdf_path, new_path)
-                logging.info(f"Renamed PDF to: {new_filename}")
-                paper_data['pdf_renamed'] = new_filename # Track change
+            # Check for generic "Untitled" or empty names which indicate failure
+            if "Untitled" in new_filename and "Unknown" in new_filename:
+                logging.warning("Proposed filename is effectively empty/unknown. Skipping rename proposal.")
+            else:
+                paper_data['proposed_filename'] = new_filename
+
         except Exception as e:
-            logging.error(f"Failed to rename PDF: {e}")
+            logging.error(f"Failed to generate proposed filename: {e}")
 
     return paper_data
