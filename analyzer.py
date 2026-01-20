@@ -17,47 +17,24 @@ def get_client():
 
 def upload_pdf(pdf_path):
     """
-    Uploads a PDF to Gemini.
+    Uploads a PDF to Gemini using SDK's path parameter.
+    The SDK manages the file handle internally.
     Returns: file_ref (API object)
     """
-    import io
     client = get_client()
-
     logging.info(f"Uploading file: {pdf_path}")
     
-    # Read file content into memory to avoid "I/O operation on closed file"
-    with open(pdf_path, 'rb') as f:
-        file_content = f.read()
-        
-    f_bytes = io.BytesIO(file_content)
-
-    try:
-        # Try passing config object (SDK v1 approach)
-        upload_config = types.UploadFileConfig(mime_type='application/pdf')
-        # Reset pointer just in case
-        f_bytes.seek(0)
-        file_ref = client.files.upload(file=f_bytes, config=upload_config)
-    except Exception as e_config:
-        logging.warning(f"Upload with object config failed: {e_config}")
-        try:
-            # Try dict config
-            # Reset pointer
-            f_bytes.seek(0)
-            file_ref = client.files.upload(file=f_bytes, config={'mime_type': 'application/pdf'})
-        except Exception as e_dict:
-            logging.warning(f"Upload with dict config failed: {e_dict}")
-            # Fallback to no config (relying on mimetypes registry)
-            f_bytes.seek(0)
-            file_ref = client.files.upload(file=f_bytes)
+    # Let SDK handle file I/O - it will auto-detect MIME type from .pdf extension
+    file_ref = client.files.upload(path=pdf_path)
     
-    # Verify upload (Active state check)
+    # Wait for processing
     while file_ref.state.name == "PROCESSING":
-            logging.info("Processing file...")
-            time.sleep(2)
-            file_ref = client.files.get(name=file_ref.name)
-            
+        logging.info("Processing file...")
+        time.sleep(2)
+        file_ref = client.files.get(name=file_ref.name)
+        
     if file_ref.state.name == "FAILED":
-            raise ValueError("File upload failed.")
+        raise ValueError("File upload failed.")
 
     logging.info(f"File uploaded successfully: {file_ref.name}")
     return file_ref
@@ -115,7 +92,13 @@ def analyze_pdf_content(file_ref, model_name="gemini-2.5-flash"):
                 config=config
             )
             
-            data = json.loads(response.text)
+            # Strip markdown if present
+            response_text = response.text.strip()
+            if response_text.startswith("```"):
+                # Remove ```json and ``` wrappers
+                response_text = response_text.replace("```json", "").replace("```", "").strip()
+            
+            data = json.loads(response_text)
             
             # Validation Logic
             short_summary = data.get("Short Summary", "")
