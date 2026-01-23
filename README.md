@@ -29,6 +29,46 @@ Automate the extraction of structured data from scientific PDFs using Google's *
 -   **Python 3.9+**
 -   A **Google Cloud API Key** with access to Gemini 2.5 Flash.
 
+---
+## 🏗️ Architecture & Workflow
+
+The application uses a modular architecture with strict atomic logging to ensure data safety.
+
+```mermaid
+flowchart TD
+    Start([Start]) --> Scan[Scan Input Directory]
+    Scan --> StateCheck{In Processed Log?}
+    StateCheck -- Yes --> Skip[Skip File]
+    StateCheck -- No --> Upload[Upload to Gemini]
+    
+    Upload --> Analyze[AI Analysis & Metadata]
+    Analyze --> Excel[Write to Excel]
+    Excel --> AtomicLog[ATOMIC: Update Log & Registry]
+    
+    AtomicLog --> RenameTry{Try Rename?}
+    RenameTry -- Success --> UpdateLog[Update Log with New Name]
+    RenameTry -- Fail --> Warn[Log Warning & Continue]
+    
+    UpdateLog --> Loop[Next File]
+    Warn --> Loop
+    Skip --> Loop
+    
+    Loop --> Graph[Generate Knowledge Graph]
+    Graph --> End([End])
+```
+
+### Key Modules
+*   **`main.py`**: The central orchestrator that manages the high-level flow.
+*   **`state_manager.py`**: Encapsulates all state tracking and JSON logging (`processed_log.json` and `processed_hashes.json`). Ensures atomic updates across runs.
+*   **`file_utils.py`**: Handles file system operations safely, including path normalization, unique filename generation, and robust renaming.
+*   **`analyzer.py`**: Manages interaction with the Google Gen AI SDK (Gemini 2.5 Flash).
+*   **`excel_writer.py`**: Manages the construction and formatting of the Excel database.
+*   **`reference_manager.py`**: Handles citation enrichment and BibTeX/APA/APS exports.
+*   **`graph_builder.py`**: Builds and visualizes the Knowledge Graph using NetworkX and Matplotlib.
+*   **`verify_pdfs.py`**: Provides MD5 hashing and integrity checks for PDF files.
+
+---
+
 ## 🛠️ Installation
 
 1.  **Clone the repository:**
@@ -70,13 +110,17 @@ python3 clean_state.py /path/to/your/pdf_folder
 
 ## 📂 Project Structure
 
--   **`main.py`**: Orchestrator for the entire pipeline.
+-   **`main.py`**: Entry point and orchestrator.
+-   **`state_manager.py`**: Manages `processed_log.json` and `processed_hashes.json`.
+-   **`file_utils.py`**: Safe file operations and path manipulation.
 -   **`analyzer.py`**: Gemini API interface (File uploads, prompts, and JSON parsing).
--   **`excel_writer.py`**: Handles all Excel logic (Formatting, Dashboard, Sheet Deduplication).
--   **`graph_builder.py`**: Generates the Knowledge Graph using NetworkX and Matplotlib.
--   **`reference_manager.py`**: Manages citations, Google Search Grounding, and PDF renaming.
--   **`verify_pdfs.py`**: Validates PDF integrity and handles MD5-based deduplication.
--   **`clean_state.py`**: Utility to wipe logs and Excel for a clean re-run.
+-   **`excel_writer.py`**: Handles formatting, Dashboard, and Excel logic.
+-   **`graph_builder.py`**: Generates and embeds the NetworkX Knowledge Graph.
+-   **`reference_manager.py`**: Citation enrichment and BibTeX exports.
+-   **`verify_pdfs.py`**: MD5 hashing and file integrity.
+-   **`clean_state.py`**: Utility to reset the analysis state.
+-   **`tests/`**: Contains integration tests to verify the architecture.
+    -   `integration_test.py`: Validates Clean Run, Idempotency, and Duplicate handling.
 
 ## 📊 Output Organization
 
@@ -94,8 +138,22 @@ Target-Folder/
 └── [Renamed-Papers].pdf             # Cleanly organized PDF files
 ```
 
+## 🧪 Testing
+
+The tool includes an automated integration test suite to ensure the stability of the processing pipeline.
+
+To run the tests:
+```bash
+python3 tests/integration_test.py
+```
+
+The tests verify:
+- **Clean Run**: Full process from empty state to Excel output.
+- **Idempotency**: Ensuring re-runs safely skip already-analyzed files.
+- **Deduplication Resilience**: Handling collisions and duplicate content detection.
+
 ## 🛡️ Synchronization Details
 The tool includes several "Self-Healing" features:
--   **Zombies**: If you delete a PDF manually, the next run will remove it from the analysis log.
--   **Safe Grounding**: Internet searches will fill in missing DOIs but are restricted from changing the paper's title to prevent hallucinated renaming loops.
--   **Unicode Safety**: Handles accents (e.g., Wójcik) robustly across different operating systems.
+- **Atomic Success**: Logs are updated *before* risky operations (like renaming) to prevent data loss or infinite loops.
+- **Collision Protection**: If two papers result in the same standardized filename, the script automatically handles it with versioning (`_v2`, `_v3`).
+- **Unicode Safety**: Handles complex characters (e.g., Wójcik) across all modules to prevent path-related crashes.

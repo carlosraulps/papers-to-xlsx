@@ -12,3 +12,4 @@ citations/
 
 .geminiignore
 GEMINI.md
+test_env/
