@@ -123,6 +123,13 @@ def analyze_pdf_content(file_ref, model_name="gemini-2.5-flash"):
             
             data = json.loads(response_text)
             
+            # Handle potential list response
+            if isinstance(data, list):
+                if len(data) > 0:
+                    data = data[0]
+                else:
+                    data = {}
+            
             # Validation Logic
             short_summary = data.get("Short Summary", "")
             glossary = data.get("Glossary", [])
